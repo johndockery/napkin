@@ -131,3 +131,55 @@ pub fn fish_config_root() -> Result<PathBuf, String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
     Ok(PathBuf::from(&home).join(".local/share/napkin/fish"))
 }
+
+const NU_INIT: &str = r#"# napkin shell integration for nushell
+# Loaded via `--config` so the user's own config.nu runs too.
+
+# nushell exposes pre/post-command hooks through $env.config.hooks.
+# We wire the three we need — prompt redraw, pre-exec, and post-exec —
+# to emit OSC 133 + OSC 7 and a napkin-private OSC 8274 for the
+# command line, matching the zsh / bash / fish shims.
+
+$env.config = ($env.config? | default {})
+$env.config.hooks = ($env.config.hooks? | default {})
+
+$env.config.hooks.pre_prompt = (
+    ($env.config.hooks.pre_prompt? | default [])
+    | append { ||
+        let ec = ($env.LAST_EXIT_CODE? | default 0)
+        print -n $"(ansi osc)133;D;($ec)(ansi st)"
+        print -n $"(ansi osc)133;A(ansi st)"
+        print -n $"(ansi osc)7;file://(sys host | get hostname)(pwd)(ansi st)"
+    }
+)
+
+$env.config.hooks.pre_execution = (
+    ($env.config.hooks.pre_execution? | default [])
+    | append { ||
+        let cmd = ($nu.scope.history | last | get command)
+        print -n $"(ansi osc)8274;cmd;($cmd)(ansi st)"
+        print -n $"(ansi osc)133;C;(ansi st)"
+    }
+)
+
+# Source the user's own config if it's where nu expects it.
+if ($nu.default-config-dir? | default "" | path exists) {
+    let user_config = ($nu.default-config-dir | path join "config.nu")
+    if ($user_config | path exists) {
+        source $user_config
+    }
+}
+
+# First prompt
+print -n $"(ansi osc)133;A(ansi st)"
+print -n $"(ansi osc)7;file://(sys host | get hostname)(pwd)(ansi st)"
+"#;
+
+pub fn ensure_nu_shim() -> Result<PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    let dir = PathBuf::from(&home).join(".local/share/napkin/nu");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let file = dir.join("napkin-init.nu");
+    std::fs::write(&file, NU_INIT).map_err(|e| e.to_string())?;
+    Ok(file)
+}

@@ -9,7 +9,9 @@ use napkin_proto::{ServerMsg, ServerOp};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 
 use crate::osc::{OscEvent, OscScanner};
-use crate::shim::{ensure_bash_shim, ensure_fish_shim, ensure_zsh_shim, fish_config_root};
+use crate::shim::{
+    ensure_bash_shim, ensure_fish_shim, ensure_nu_shim, ensure_zsh_shim, fish_config_root,
+};
 use crate::storage::{Storage, StoredCommand};
 
 /// Metadata for a session that was seen previously but has no live PTY yet.
@@ -121,6 +123,7 @@ fn spawn_session_inner(
     let is_zsh = shell.ends_with("/zsh") || shell == "zsh";
     let is_bash = shell.ends_with("/bash") || shell == "bash";
     let is_fish = shell.ends_with("/fish") || shell == "fish";
+    let is_nu = shell.ends_with("/nu") || shell == "nu";
 
     let mut cmd = CommandBuilder::new(&shell);
     if is_bash {
@@ -128,6 +131,12 @@ fn spawn_session_inner(
             cmd.arg("--rcfile");
             cmd.arg(rcfile.to_string_lossy().to_string());
             cmd.arg("-i");
+        }
+    }
+    if is_nu {
+        if let Ok(init) = ensure_nu_shim() {
+            cmd.arg("--config");
+            cmd.arg(init.to_string_lossy().to_string());
         }
     }
     if is_fish {
