@@ -101,6 +101,6 @@ napkin/
 
 ## License
 
-MIT (pending — see the repo root for the canonical copy once it lands).
+MIT. See [`LICENSE`](./LICENSE).
 
 See [`PLAN.md`](./PLAN.md) for the roadmap.
