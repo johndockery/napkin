@@ -1,0 +1,28 @@
+# Netlify config for napkin.world.
+#
+# The landing page is a single static file under site/. No build step;
+# Netlify just publishes that directory as-is.
+
+[build]
+  publish = "site"
+  command = ""
+
+# Long cache for the logo, short cache for the HTML so content updates
+# go live on the next deploy without users having to hard-refresh.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "interest-cohort=()"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=300, s-maxage=3600"
+
+[[headers]]
+  for = "/napkin.png"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

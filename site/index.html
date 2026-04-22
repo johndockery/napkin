@@ -1,0 +1,1804 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1280" />
+<title>napkin — a terminal that keeps up with the way you work now</title>
+<meta name="description" content="A fast, local-first terminal built in Rust. Native splits, searchable scrollback, and a persistent daemon that keeps every session — agents included — alive across crashes and reboots." />
+<meta property="og:title" content="napkin — a terminal that keeps up with the way you work now" />
+<meta property="og:description" content="Fast, local-first, built in Rust. Native splits, searchable scrollback, agent-aware. Sessions survive crashes and reboots." />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://napkin.world" />
+<link rel="icon" href="napkin.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Fraunces:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,500;1,600&family=Caveat:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+<style>
+  :root {
+    /* Cream + red picnic palette, sampled from the logo */
+    --cream: #fefbf4;
+    --cream-2: #faf3e3;
+    --cream-3: #f3e9d2;
+    --paper: #fffdf7;
+    --ink: #2a1a12;
+    --ink-muted: #5a4433;
+    --ink-dim: #8b7560;
+    --red: #b82b23;              /* deep gingham red (primary) */
+    --red-bright: #e55f52;       /* gingham light squares */
+    --red-deep: #a0211a;         /* shadow under primary */
+    --red-wash: rgba(184, 43, 35, 0.08);
+    --border: rgba(42, 26, 18, 0.12);
+    --border-strong: rgba(42, 26, 18, 0.22);
+
+    /* Terminal still dark — it's a product shot on a napkin */
+    --term-bg: #1c1814;
+    --term-surface: #231e18;
+    --term-fg: #efe6d6;
+    --term-dim: #a89680;
+    --term-dimmer: #6b5b4a;
+    --term-green: #a5b96a;
+    --term-yellow: #e0b050;
+    --term-red: #d86b5a;
+    --term-blue: #7ca8c2;
+    --term-magenta: #c48ac4;
+    --term-cyan: #7cb9b0;
+
+    --serif: 'Fraunces', ui-serif, Georgia, serif;
+    --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    --hand: 'Caveat', 'Comic Sans MS', cursive;
+
+    --maxw: 1180px;
+    --gingham-size: 36px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--cream);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: 'ss01', 'ss02';
+    overflow-x: hidden;
+  }
+
+  /* Subtle paper texture */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 100;
+    opacity: 0.22;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='280' height='280'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.62' numOctaves='2' seed='5'/><feColorMatrix values='0 0 0 0 0.16  0 0 0 0 0.10  0 0 0 0 0.07  0 0 0 0.4 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  }
+
+  a { color: inherit; text-decoration: none; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
+
+  .mono { font-family: var(--mono); }
+  .hand { font-family: var(--hand); }
+
+  .container {
+    width: 100%;
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 0 32px;
+  }
+
+  /* ——— Gingham pattern (a real checker, tiled) ——— */
+  .gingham-band {
+    height: 28px;
+    background-image:
+      linear-gradient(to right, transparent 50%, rgba(184, 43, 35, 0.55) 50%),
+      linear-gradient(to bottom, rgba(184, 43, 35, 0.55) 50%, rgba(184, 43, 35, 0.88) 50%);
+    background-size: 28px 28px;
+    background-blend-mode: multiply;
+    background-color: var(--cream);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+
+  /* ——— Top nav ——— */
+  nav.top {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: var(--cream);
+    border-bottom: 1px solid var(--border);
+  }
+  nav.top .inner {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 64px;
+  }
+  nav.top .brand {
+    display: flex; align-items: center; gap: 12px;
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 22px;
+    letter-spacing: -0.02em;
+    color: var(--red);
+  }
+  nav.top .brand img {
+    width: 30px; height: 30px;
+    border-radius: 7px;
+  }
+  nav.top .brand .ver {
+    font-family: var(--mono);
+    color: var(--ink-dim);
+    font-weight: 400;
+    font-size: 11px;
+    margin-left: 4px;
+    letter-spacing: 0;
+  }
+  nav.top .links {
+    display: flex; gap: 32px;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--ink-muted);
+  }
+  nav.top .links a:hover { color: var(--red); }
+  nav.top .cta-row { display: flex; align-items: center; gap: 10px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--border-strong);
+    background: transparent;
+    color: var(--ink);
+    transition: all 0.15s;
+    cursor: pointer;
+  }
+  .btn:hover { background: rgba(42, 26, 18, 0.04); border-color: var(--ink); }
+  .btn.primary {
+    background: var(--red);
+    color: var(--paper);
+    border-color: var(--red-deep);
+    font-weight: 600;
+    box-shadow: 0 2px 0 var(--red-deep);
+  }
+  .btn.primary:hover {
+    background: var(--red-deep);
+    transform: translateY(-1px);
+    box-shadow: 0 3px 0 var(--red-deep);
+  }
+  .btn.primary:active {
+    transform: translateY(1px);
+    box-shadow: 0 1px 0 var(--red-deep);
+  }
+
+  /* ——— Hero ——— */
+  section.hero {
+    position: relative;
+    padding: 80px 0 48px;
+    overflow: hidden;
+  }
+  .corner-gingham {
+    position: absolute;
+    width: 180px; height: 180px;
+    background-image:
+      linear-gradient(to right, transparent 50%, rgba(184, 43, 35, 0.4) 50%),
+      linear-gradient(to bottom, rgba(184, 43, 35, 0.4) 50%, rgba(184, 43, 35, 0.7) 50%);
+    background-size: 36px 36px;
+    background-blend-mode: multiply;
+    background-color: var(--cream);
+    opacity: 0.55;
+    pointer-events: none;
+  }
+  .corner-gingham.tl { top: 0; left: 0; mask-image: radial-gradient(circle at top left, black, transparent 70%); -webkit-mask-image: radial-gradient(circle at top left, black, transparent 70%); }
+  .corner-gingham.br { bottom: 0; right: 0; mask-image: radial-gradient(circle at bottom right, black, transparent 70%); -webkit-mask-image: radial-gradient(circle at bottom right, black, transparent 70%); }
+
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--ink-muted);
+    padding: 5px 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    margin-bottom: 28px;
+    background: var(--paper);
+  }
+  .eyebrow .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--red);
+    box-shadow: 0 0 0 3px rgba(184, 43, 35, 0.18);
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  h1.headline {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 88px;
+    line-height: 0.98;
+    letter-spacing: -0.03em;
+    margin: 0 0 28px;
+    color: var(--ink);
+    max-width: 960px;
+  }
+  h1.headline em {
+    font-family: var(--serif);
+    font-style: italic;
+    font-weight: 500;
+    color: var(--red);
+    font-variation-settings: "SOFT" 100, "opsz" 144;
+  }
+  h1.headline .scribble {
+    position: relative;
+    display: inline-block;
+  }
+  h1.headline .scribble::after {
+    content: '';
+    position: absolute;
+    left: -4px; right: -4px;
+    bottom: -2px;
+    height: 12px;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 12' preserveAspectRatio='none'><path d='M2 7 C 40 2, 80 11, 120 6 S 200 2, 240 8 S 290 4, 298 7' fill='none' stroke='%23b82b23' stroke-width='2.6' stroke-linecap='round' opacity='0.9'/></svg>");
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    pointer-events: none;
+  }
+
+  .sub {
+    font-family: var(--serif);
+    font-size: 21px;
+    line-height: 1.5;
+    color: var(--ink-muted);
+    max-width: 640px;
+    margin: 0 0 32px;
+    text-wrap: pretty;
+  }
+  .sub b { color: var(--ink); font-weight: 600; }
+
+  .hero-note {
+    font-family: var(--hand);
+    font-size: 22px;
+    color: var(--red);
+    transform: rotate(-2deg);
+    display: inline-block;
+    margin-bottom: 8px;
+    position: relative;
+    padding-left: 28px;
+  }
+  .hero-note::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 14px;
+    width: 22px; height: 1px;
+    background: var(--red);
+    transform: rotate(-8deg);
+  }
+
+  .hero-ctas {
+    display: flex; gap: 12px; align-items: center;
+    flex-wrap: wrap;
+  }
+  .install-copy {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--ink-muted);
+    padding: 8px 14px;
+    border: 1px dashed var(--border-strong);
+    border-radius: 6px;
+    background: var(--paper);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .install-copy:hover { border-color: var(--red); color: var(--red); border-style: solid; }
+  .install-copy .prompt { color: var(--red); }
+  .install-copy svg { width: 13px; height: 13px; color: var(--ink-dim); }
+
+  .hero-meta {
+    margin-top: 40px;
+    display: flex; gap: 28px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-dim);
+    flex-wrap: wrap;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    max-width: 760px;
+  }
+  .hero-meta span b { color: var(--ink); font-weight: 500; }
+
+  /* ——— Terminal window ——— */
+  .terminal-wrap {
+    margin-top: 64px;
+    position: relative;
+    padding: 18px;
+    background: var(--paper);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 2px 0 rgba(42,26,18,0.06), 0 24px 40px -12px rgba(42,26,18,0.18);
+  }
+  .terminal-wrap::before {
+    content: 'fig. 01 · napkin running a four-pane workspace';
+    font-family: var(--hand);
+    font-size: 20px;
+    color: var(--red);
+    position: absolute;
+    right: 24px; top: -14px;
+    transform: rotate(-1deg);
+    background: var(--paper);
+    padding: 0 8px;
+  }
+
+  .terminal {
+    position: relative;
+    background: var(--term-bg);
+    border: 1px solid #0d0b09;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.04) inset,
+      0 20px 40px -8px rgba(0,0,0,0.35);
+  }
+  .term-titlebar {
+    display: flex; align-items: center;
+    height: 38px;
+    padding: 0 14px;
+    background: #15120f;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    gap: 12px;
+  }
+  .traffic { display: flex; gap: 7px; }
+  .traffic span {
+    width: 11px; height: 11px; border-radius: 50%;
+    background: #3a3430;
+  }
+  .traffic span:nth-child(1) { background: #d86b5a; }
+  .traffic span:nth-child(2) { background: #e0b050; }
+  .traffic span:nth-child(3) { background: #a5b96a; }
+
+  .term-tabs {
+    display: flex; gap: 2px;
+    margin-left: 12px;
+    flex: 1;
+    overflow: hidden;
+  }
+  .term-tab {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 5px 14px 5px 11px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--term-dim);
+    border-radius: 5px;
+    transition: all 0.15s;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .term-tab:hover { color: var(--term-fg); background: rgba(255,255,255,0.03); }
+  .term-tab.active {
+    background: rgba(255, 204, 153, 0.08);
+    color: var(--term-fg);
+  }
+  .term-tab .tab-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--term-dimmer);
+  }
+  .term-tab.active .tab-dot { background: var(--term-yellow); }
+  .term-tab[data-color="green"] .tab-dot { background: var(--term-green); }
+  .term-tab[data-color="blue"] .tab-dot { background: var(--term-blue); }
+  .term-tab[data-color="magenta"] .tab-dot { background: var(--term-magenta); }
+
+  .term-titlebar-right {
+    display: flex; align-items: center; gap: 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--term-dim);
+  }
+  .session-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 8px;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 4px;
+  }
+  .session-chip .on {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--term-green);
+    box-shadow: 0 0 6px rgba(165, 185, 106, 0.6);
+  }
+
+  .term-body {
+    display: grid;
+    grid-template-columns: 1fr 260px;
+    height: 520px;
+    background: var(--term-bg);
+  }
+  .panes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 1px;
+    background: rgba(255,255,255,0.06);
+  }
+  .pane {
+    background: var(--term-bg);
+    padding: 12px 14px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.55;
+    overflow: hidden;
+    position: relative;
+    display: flex; flex-direction: column;
+    color: var(--term-fg);
+  }
+  .pane.focused { background: var(--term-surface); }
+  .pane-head {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 10.5px;
+    color: var(--term-dim);
+    margin-bottom: 10px;
+    flex-shrink: 0;
+  }
+  .pane-head .pane-name { color: var(--term-fg); font-weight: 500; }
+  .pane-head .sep { color: var(--term-dimmer); }
+  .pane-head .cwd { color: var(--term-yellow); }
+  .pane-head .pid { color: var(--term-dimmer); font-size: 10px; margin-left: auto; }
+  .pane-content { flex: 1; overflow: hidden; white-space: pre; }
+  .prompt-line .pr { color: var(--term-red); }
+  .prompt-line .pth { color: var(--term-blue); }
+  .prompt-line .git { color: var(--term-magenta); }
+  .out { color: var(--term-fg); }
+  .out-dim { color: var(--term-dim); }
+  .out-warn { color: var(--term-yellow); }
+  .out-ok { color: var(--term-green); }
+  .out-err { color: var(--term-red); }
+  .out-info { color: var(--term-cyan); }
+  .cursor {
+    display: inline-block;
+    width: 7px; height: 14px;
+    background: var(--term-yellow);
+    vertical-align: text-bottom;
+    animation: blink 1.05s steps(1) infinite;
+    margin-left: 2px;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .agents {
+    background: #1a1713;
+    border-left: 1px solid rgba(255,255,255,0.06);
+    padding: 14px 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    display: flex; flex-direction: column;
+    color: var(--term-fg);
+  }
+  .agents h5 {
+    margin: 0 0 12px;
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--term-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    display: flex; justify-content: space-between;
+  }
+  .agents h5 .count { color: var(--term-yellow); }
+  .agent-row {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .agent-row:last-child { border-bottom: 0; }
+  .agent-icon {
+    width: 8px; height: 8px; border-radius: 50%;
+    margin-top: 6px; flex-shrink: 0;
+    background: var(--term-dimmer);
+  }
+  .agent-row[data-state="wait"] .agent-icon {
+    background: var(--term-yellow);
+    animation: ringpulse 1.8s infinite;
+  }
+  .agent-row[data-state="run"] .agent-icon {
+    background: var(--term-cyan);
+    animation: blink 1.2s infinite;
+  }
+  .agent-row[data-state="done"] .agent-icon { background: var(--term-green); }
+  @keyframes ringpulse {
+    0% { box-shadow: 0 0 0 0 rgba(224, 176, 80, 0.5); }
+    100% { box-shadow: 0 0 0 8px rgba(224, 176, 80, 0); }
+  }
+  .agent-name { color: var(--term-fg); font-size: 12px; }
+  .agent-meta { color: var(--term-dim); font-size: 10.5px; margin-top: 2px; }
+  .agent-row[data-state="wait"] .agent-meta { color: var(--term-yellow); }
+
+  .agents-footer {
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255,255,255,0.04);
+    color: var(--term-dim);
+    font-size: 10.5px;
+    display: flex; justify-content: space-between;
+  }
+
+  /* ——— Sections ——— */
+  section { padding: 96px 0; position: relative; }
+  .section-label {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--red);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .section-label::before {
+    content: '';
+    width: 24px; height: 8px;
+    background-image:
+      linear-gradient(to right, transparent 50%, rgba(184, 43, 35, 0.55) 50%),
+      linear-gradient(to bottom, rgba(184, 43, 35, 0.55) 50%, rgba(184, 43, 35, 0.88) 50%);
+    background-size: 8px 8px;
+    background-blend-mode: multiply;
+    background-color: var(--cream);
+  }
+  .section-title {
+    font-family: var(--serif);
+    font-size: 56px;
+    line-height: 1.02;
+    letter-spacing: -0.025em;
+    font-weight: 500;
+    margin: 0 0 20px;
+    max-width: 880px;
+    text-wrap: balance;
+    color: var(--ink);
+  }
+  .section-title em {
+    font-style: italic;
+    color: var(--red);
+    font-weight: 500;
+  }
+  .section-kicker {
+    font-family: var(--serif);
+    font-size: 19px;
+    color: var(--ink-muted);
+    max-width: 680px;
+    margin: 0;
+    text-wrap: pretty;
+  }
+
+  /* ——— Why section: three "napkins" ——— */
+  .why-grid {
+    margin-top: 64px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 28px;
+  }
+  .napkin {
+    background: var(--paper);
+    border-radius: 4px;
+    padding: 36px 32px 40px;
+    position: relative;
+    min-height: 400px;
+    display: flex; flex-direction: column;
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.5) inset,
+      0 2px 0 rgba(42,26,18,0.04),
+      0 10px 24px -8px rgba(42,26,18,0.14);
+    border: 1px solid var(--border);
+  }
+  .napkin:nth-child(1) { transform: rotate(-0.8deg); }
+  .napkin:nth-child(2) { transform: rotate(0.4deg); }
+  .napkin:nth-child(3) { transform: rotate(-0.3deg); }
+
+  .napkin::before {
+    content: '';
+    position: absolute;
+    inset: 8px;
+    border: 1px dashed rgba(42,26,18,0.18);
+    border-radius: 3px;
+    pointer-events: none;
+  }
+
+  .napkin .num {
+    position: absolute;
+    top: 20px; right: 24px;
+    font-family: var(--hand);
+    font-size: 32px;
+    color: var(--red);
+    transform: rotate(6deg);
+    line-height: 1;
+  }
+
+  .napkin .tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-dim);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  .napkin h3 {
+    font-family: var(--serif);
+    font-size: 26px;
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.015em;
+    margin: 0 0 14px;
+    color: var(--ink);
+  }
+  .napkin h3 em { color: var(--red); font-style: italic; font-weight: 500; }
+  .napkin p {
+    font-family: var(--serif);
+    font-size: 16px;
+    line-height: 1.55;
+    color: var(--ink-muted);
+    margin: 0;
+  }
+
+  .napkin-viz {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px dashed rgba(42,26,18,0.22);
+  }
+
+  /* Viz: detach/reattach */
+  .viz-detach-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 4px 0;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-dim);
+  }
+  .viz-detach-row .lbl { width: 58px; }
+  .viz-detach-row .bar {
+    flex: 1; height: 6px;
+    background: var(--cream-2);
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+  }
+  .viz-detach-row .bar::after {
+    content: ''; position: absolute; inset: 0;
+    transform-origin: left;
+    background: var(--red);
+  }
+  .viz-detach-row[data-s="ui"] .bar::after {
+    background: var(--ink-dim);
+    animation: barflash 3.5s infinite;
+  }
+  .viz-detach-row[data-s="daemon"] .bar::after { background: var(--red); }
+  .viz-detach-row .note { color: var(--ink-muted); }
+  @keyframes barflash {
+    0%, 38% { transform: scaleX(1); opacity: 1; }
+    40%, 60% { transform: scaleX(0); opacity: 0.3; }
+    62%, 100% { transform: scaleX(1); opacity: 1; }
+  }
+
+  /* Viz: scrollback search */
+  .viz-search-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px;
+    background: var(--cream-2);
+    border-radius: 5px;
+    margin-bottom: 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .viz-search-bar .icn { color: var(--ink-dim); font-size: 10px; }
+  .viz-search-bar .q { color: var(--ink); }
+  .viz-search-bar .q .hl { background: rgba(184,43,35,0.2); color: var(--red); padding: 0 3px; border-radius: 2px; }
+  .viz-search-result {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-dim);
+    padding: 3px 0 3px 10px;
+    border-left: 2px solid transparent;
+  }
+  .viz-search-result.hit { border-color: var(--red); color: var(--ink); }
+  .viz-search-result .hl { background: rgba(184,43,35,0.2); color: var(--red); padding: 0 2px; border-radius: 2px; }
+
+  /* Viz: agents */
+  .viz-agents { display: flex; flex-direction: column; gap: 6px; }
+  .viz-agent-row {
+    display: flex; align-items: center; gap: 10px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--ink-muted);
+  }
+  .viz-agent-row .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--ink-dim);
+  }
+  .viz-agent-row[data-s="w"] .dot { background: var(--red); animation: blink 1.2s infinite; }
+  .viz-agent-row[data-s="r"] .dot { background: var(--term-blue); animation: blink 0.9s infinite; }
+  .viz-agent-row[data-s="d"] .dot { background: #7a9450; }
+  .viz-agent-row .st { color: var(--ink-dim); margin-left: auto; }
+  .viz-agent-row[data-s="w"] .st { color: var(--red); }
+
+  /* ——— Features grid ——— */
+  .features {
+    margin-top: 56px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .feature {
+    background: var(--cream);
+    padding: 30px 28px 34px;
+    min-height: 220px;
+    display: flex; flex-direction: column;
+    position: relative;
+    transition: background 0.2s;
+  }
+  .feature:hover { background: var(--paper); }
+  .feature-num {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-dim);
+    letter-spacing: 0.08em;
+    margin-bottom: 14px;
+  }
+  .feature-ico {
+    width: 36px; height: 36px;
+    background: var(--red-wash);
+    border-radius: 8px;
+    color: var(--red);
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 18px;
+  }
+  .feature-ico svg { width: 20px; height: 20px; }
+  .feature-title {
+    font-family: var(--serif);
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  .feature-title .kbd {
+    font-family: var(--mono); font-size: 10.5px;
+    color: var(--ink-dim);
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    margin-left: 8px;
+    background: var(--paper);
+    letter-spacing: 0;
+    font-weight: 400;
+    vertical-align: middle;
+  }
+  .feature-body {
+    font-family: var(--serif);
+    font-size: 15px;
+    color: var(--ink-muted);
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  /* ——— Architecture ——— */
+  .arch-section { background: var(--paper); }
+  .arch-inner {
+    margin-top: 56px;
+    background: var(--cream);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 56px 48px;
+    position: relative;
+  }
+  .arch-inner::before {
+    content: 'fig. 02';
+    font-family: var(--hand);
+    font-size: 22px;
+    color: var(--red);
+    position: absolute;
+    top: 18px; right: 28px;
+    transform: rotate(-4deg);
+  }
+
+  .arch-diagram {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    align-items: stretch;
+    gap: 0;
+  }
+  .arch-col { display: flex; }
+  .arch-box {
+    background: var(--paper);
+    border: 1.5px solid var(--ink);
+    border-radius: 8px;
+    padding: 22px 22px 20px;
+    flex: 1;
+    position: relative;
+    display: flex; flex-direction: column;
+    min-height: 220px;
+    box-shadow: 3px 3px 0 rgba(42,26,18,0.08);
+  }
+  .arch-box.daemon {
+    border-color: var(--red);
+    background: #fef4e5;
+    box-shadow: 3px 3px 0 rgba(184,43,35,0.22);
+  }
+  .arch-box .label {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-dim);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .arch-box.daemon .label { color: var(--red); }
+  .arch-box .title {
+    font-family: var(--serif);
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 4px;
+    letter-spacing: -0.015em;
+  }
+  .arch-box.daemon .title { color: var(--red); }
+  .arch-box .title .v {
+    font-family: var(--hand);
+    color: var(--ink-dim);
+    font-weight: 400;
+    font-size: 18px;
+    margin-left: 6px;
+    letter-spacing: 0;
+  }
+  .arch-box.daemon .title .v { color: var(--red); }
+  .arch-box .sub {
+    font-family: var(--serif);
+    font-size: 14px;
+    color: var(--ink-muted);
+    line-height: 1.5;
+    margin: 0 0 14px;
+  }
+  .arch-box .pill-row {
+    margin-top: auto;
+    display: flex; flex-wrap: wrap; gap: 6px;
+  }
+  .arch-box .pill {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    padding: 3px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--ink-muted);
+    background: var(--cream);
+  }
+  .arch-box.daemon .pill { border-color: rgba(184,43,35,0.3); }
+
+  .arch-connector {
+    display: flex; align-items: center; justify-content: center;
+    padding: 0 12px;
+    min-width: 120px;
+  }
+  .arch-arrow {
+    width: 100%;
+    display: flex; flex-direction: column; gap: 6px;
+    position: relative;
+  }
+  .arch-arrow .lbl {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-dim);
+    text-align: center;
+  }
+  .arch-arrow .lbl .accent { color: var(--red); font-weight: 600; }
+  .arch-arrow svg { width: 100%; height: 22px; display: block; }
+
+  .arch-caption {
+    margin-top: 40px;
+    font-family: var(--hand);
+    font-size: 28px;
+    color: var(--red);
+    text-align: center;
+    transform: rotate(-0.8deg);
+  }
+  .arch-caption::before { content: '"'; margin-right: 2px; }
+  .arch-caption::after { content: '"'; margin-left: 2px; }
+
+  /* ——— Quickstart ——— */
+  .quickstart {
+    margin-top: 48px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  .qs-card {
+    background: var(--paper);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    display: flex; flex-direction: column;
+    position: relative;
+  }
+  .qs-card h4 {
+    font-family: var(--serif);
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0 0 4px;
+    display: flex; align-items: center; gap: 10px;
+    letter-spacing: -0.01em;
+  }
+  .qs-card h4 .os {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 400;
+    color: var(--ink-dim);
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--cream);
+  }
+  .qs-card p.qs-sub {
+    font-family: var(--serif);
+    font-size: 14px;
+    color: var(--ink-muted);
+    margin: 0 0 20px;
+  }
+  .qs-code {
+    flex: 1;
+    background: var(--term-bg);
+    border-radius: 8px;
+    padding: 16px 18px;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--term-fg);
+    display: flex; justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .qs-code pre { margin: 0; font: inherit; white-space: pre-wrap; color: var(--term-fg); }
+  .qs-code .cmt { color: var(--term-dim); }
+  .qs-code .pr { color: var(--term-yellow); }
+  .qs-code .flag { color: var(--term-magenta); }
+  .qs-code .str { color: var(--term-green); }
+  .qs-code .copy-btn {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--term-dim);
+    padding: 4px 10px;
+    border-radius: 5px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+  .qs-code .copy-btn:hover { color: var(--term-fg); border-color: rgba(255,255,255,0.2); }
+  .qs-code .copy-btn.copied { color: var(--term-green); border-color: rgba(165, 185, 106, 0.4); }
+
+  .qs-meta {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-dim);
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: auto;
+  }
+  .qs-meta a { color: var(--ink-muted); }
+  .qs-meta a:hover { color: var(--red); }
+
+  /* ——— Anti-features ——— */
+  .anti {
+    margin-top: 64px;
+    padding: 36px 32px;
+    background: var(--paper);
+    border: 1px dashed var(--border-strong);
+    border-radius: 12px;
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 40px;
+    align-items: center;
+  }
+  .anti-left h4 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-style: italic;
+    font-size: 26px;
+    color: var(--red);
+    margin: 0 0 6px;
+    line-height: 1.1;
+  }
+  .anti-left p {
+    font-family: var(--serif);
+    font-size: 15px;
+    color: var(--ink-muted);
+    margin: 0;
+  }
+  .anti-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 24px;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .anti-item {
+    display: flex; align-items: center; gap: 10px;
+    color: var(--ink-muted);
+  }
+  .anti-item .x {
+    width: 16px; height: 16px; flex-shrink: 0;
+    color: var(--red);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700;
+  }
+  .anti-item s { text-decoration-color: var(--red); text-decoration-thickness: 1.5px; }
+
+  /* ——— Footer ——— */
+  footer {
+    background: var(--ink);
+    color: var(--cream);
+    padding: 64px 0 40px;
+    margin-top: 40px;
+  }
+  footer::before {
+    content: '';
+    display: block;
+    height: 16px;
+    background-image:
+      linear-gradient(to right, transparent 50%, rgba(184, 43, 35, 0.75) 50%),
+      linear-gradient(to bottom, rgba(184, 43, 35, 0.75) 50%, rgba(184, 43, 35, 0.92) 50%);
+    background-size: 16px 16px;
+    background-blend-mode: multiply;
+    background-color: var(--paper);
+    margin-bottom: 56px;
+  }
+  .foot-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    gap: 40px;
+  }
+  .foot-brand { display: flex; flex-direction: column; gap: 14px; max-width: 340px; }
+  .foot-brand .row1 {
+    display: flex; align-items: center; gap: 10px;
+    font-family: var(--serif);
+    font-size: 22px; font-weight: 600;
+    color: var(--cream);
+  }
+  .foot-brand .row1 img { width: 28px; height: 28px; border-radius: 6px; }
+  .foot-brand .tag {
+    color: rgba(254,251,244,0.65);
+    font-size: 14px; line-height: 1.55;
+    font-family: var(--serif);
+  }
+  .foot-brand .license {
+    font-family: var(--mono); font-size: 11px;
+    color: rgba(254,251,244,0.4);
+    margin-top: 6px;
+  }
+  .foot-col h6 {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    color: rgba(254,251,244,0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 0 0 14px;
+  }
+  .foot-col a {
+    display: block;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: rgba(254,251,244,0.75);
+    padding: 4px 0;
+    transition: color 0.15s;
+  }
+  .foot-col a:hover { color: var(--red-bright); }
+  .foot-bottom {
+    margin-top: 48px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(254,251,244,0.1);
+    display: flex; justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: rgba(254,251,244,0.5);
+    align-items: center;
+  }
+  .foot-bottom .cheers {
+    font-family: var(--hand);
+    font-size: 22px;
+    color: var(--red-bright);
+    transform: rotate(-1deg);
+  }
+
+  /* Small screens */
+  @media (max-width: 960px) {
+    .why-grid, .features { grid-template-columns: 1fr; }
+    .arch-diagram { grid-template-columns: 1fr; gap: 16px; }
+    .arch-connector { transform: rotate(90deg); min-height: 40px; }
+    .quickstart { grid-template-columns: 1fr; }
+    .foot-grid, .anti { grid-template-columns: 1fr; gap: 20px; }
+    h1.headline { font-size: 56px; }
+    .section-title { font-size: 38px; }
+    .term-body { grid-template-columns: 1fr; height: auto; }
+    .panes { grid-template-columns: 1fr; grid-template-rows: auto auto auto auto; }
+    .pane { min-height: 160px; }
+    .agents { border-left: 0; border-top: 1px solid rgba(255,255,255,0.06); }
+  }
+</style>
+</head>
+<body>
+
+<nav class="top">
+  <div class="container inner">
+    <a class="brand" href="#">
+      <img src="napkin.png" alt="napkin" />
+      <span>napkin</span>
+      <span class="ver">v0.1.0</span>
+    </a>
+    <div class="links">
+      <a href="#why">Why</a>
+      <a href="#features">Features</a>
+      <a href="#architecture">How it works</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/johndockery/napkin" target="_blank" rel="noopener">Source</a>
+    </div>
+    <div class="cta-row">
+      <a class="btn" href="https://github.com/johndockery/napkin" target="_blank" rel="noopener">GitHub →</a>
+      <a class="btn primary" href="#install">Download</a>
+    </div>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="corner-gingham tl"></div>
+  <div class="corner-gingham br"></div>
+  <div class="container">
+    <div class="eyebrow"><span class="dot"></span> <span>v0.1.0 · macOS · Linux · no cloud, no account, ever</span></div>
+    <div class="hero-note">a terminal you'll actually enjoy using</div>
+    <h1 class="headline">
+      A terminal that <em>keeps up</em><br/>
+      with <span class="scribble">the way you work</span> now.
+    </h1>
+    <p class="sub">
+      Fast, local-first, built in Rust. Native splits, searchable scrollback,
+      and a persistent daemon that keeps every session — <b>agents included</b> —
+      alive across crashes and reboots.
+    </p>
+    <div class="hero-ctas">
+      <a class="btn primary" href="#install">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 3v14m-6-6 6 6 6-6M5 21h14"/></svg>
+        Download for macOS
+      </a>
+      <button class="install-copy" id="copy-install-hero">
+        <span class="prompt">$</span>
+        <span id="install-hero-text">curl -fsSL napkin.world/install | sh</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+      </button>
+      <a class="btn" href="https://github.com/johndockery/napkin" target="_blank" rel="noopener">View source →</a>
+    </div>
+    <div class="hero-meta">
+      <span><b>Rust core</b></span>
+      <span><b>Local-first</b> · no cloud</span>
+      <span><b>MIT</b> licensed</span>
+      <span>macOS &amp; Linux</span>
+    </div>
+
+    <div class="terminal-wrap">
+      <div class="terminal" id="hero-term">
+        <div class="term-titlebar">
+          <div class="traffic"><span></span><span></span><span></span></div>
+          <div class="term-tabs" id="tabs">
+            <div class="term-tab active" data-color="orange"><span class="tab-dot"></span>web · 4 panes</div>
+            <div class="term-tab" data-color="green"><span class="tab-dot"></span>agents</div>
+            <div class="term-tab" data-color="blue"><span class="tab-dot"></span>ssh · fly.io</div>
+            <div class="term-tab" data-color="magenta"><span class="tab-dot"></span>scrollback</div>
+            <div class="term-tab" style="color: var(--term-dimmer)">+</div>
+          </div>
+          <div class="term-titlebar-right">
+            <span class="session-chip"><span class="on"></span>napkind · attached</span>
+            <span>⌘K</span>
+          </div>
+        </div>
+        <div class="term-body">
+          <div class="panes" id="panes"></div>
+          <div class="agents" id="agents"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="gingham-band"></div>
+
+<section id="why">
+  <div class="container">
+    <div class="section-label">Three things it fixes</div>
+    <h2 class="section-title">Every terminal still <em>gets three things wrong.</em></h2>
+    <p class="section-kicker">
+      tmux + iTerm2 is held together with tape and a conf file you forgot you wrote in 2017.
+      Warp wants your email. Ghostty is fast but won't help you find anything.
+      napkin is the workspace layer you keep wishing your terminal had.
+    </p>
+
+    <div class="why-grid">
+      <div class="napkin">
+        <div class="num">01.</div>
+        <div class="tag">Workspaces</div>
+        <h3>Sessions that <em>fold up</em> and unfold.</h3>
+        <p>
+          Close the window. Reboot. Come back two days later. Every pane, cwd, env var,
+          running process, and scrollback line is right where you left it. Detach and reattach like tmux —
+          without the keybinding gymnastics or the conf file.
+        </p>
+        <div class="napkin-viz">
+          <div class="viz-detach-row" data-s="ui">
+            <span class="lbl">UI</span><span class="bar"></span>
+            <span class="note">disposable</span>
+          </div>
+          <div class="viz-detach-row" data-s="daemon">
+            <span class="lbl">daemon</span><span class="bar"></span>
+            <span class="note">holds everything</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="napkin">
+        <div class="num">02.</div>
+        <div class="tag">Scrollback</div>
+        <h3>Scrollback that <em>behaves like notes.</em></h3>
+        <p>
+          Every command is a record, not a blob of bytes. Full-text search across
+          every session you've ever run. Jump between prompts like chapters. Bookmark
+          the gnarly stack trace you'll want again tomorrow. Replay history byte-for-byte.
+        </p>
+        <div class="napkin-viz">
+          <div class="viz-search-bar">
+            <span class="icn">⌘F</span>
+            <span class="q">cargo <span class="hl">bench</span></span>
+          </div>
+          <div class="viz-search-result hit">14:22 · <span class="hl">cargo bench</span> -p core/parser</div>
+          <div class="viz-search-result hit">11:07 · <span class="hl">cargo bench</span> --all</div>
+          <div class="viz-search-result">09:14 · cargo test --release</div>
+        </div>
+      </div>
+
+      <div class="napkin">
+        <div class="num">03.</div>
+        <div class="tag">Agents</div>
+        <h3>Knows which agent <em>needs you.</em></h3>
+        <p>
+          A terminal built in 2026 should know the difference between a build log and a
+          Claude Code session. napkin detects agents, tracks their state, and tells you
+          at a glance which of your six panes is waiting on a yes/no.
+        </p>
+        <div class="napkin-viz">
+          <div class="viz-agents">
+            <div class="viz-agent-row" data-s="w"><span class="dot"></span>claude · web<span class="st">waiting · 2m</span></div>
+            <div class="viz-agent-row" data-s="r"><span class="dot"></span>codex · api<span class="st">thinking</span></div>
+            <div class="viz-agent-row" data-s="d"><span class="dot"></span>aider · docs<span class="st">done · $0.42</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features" style="padding-top: 32px;">
+  <div class="container">
+    <div class="section-label">What's on the napkin</div>
+    <h2 class="section-title">The fundamentals, <em>done right.</em> Plus the stuff 2026 demands.</h2>
+
+    <div class="features" id="features-grid"></div>
+
+    <div class="anti">
+      <div class="anti-left">
+        <h4>Also: what's <em>not</em> on the napkin.</h4>
+        <p>napkin is a terminal. It is not a platform, a launchpad, or a wedge for your email address.</p>
+      </div>
+      <div class="anti-list">
+        <div class="anti-item"><span class="x">×</span><s>Sign up to continue</s></div>
+        <div class="anti-item"><span class="x">×</span><s>Try our AI for free</s></div>
+        <div class="anti-item"><span class="x">×</span><s>Book a 15-min demo</s></div>
+        <div class="anti-item"><span class="x">×</span><s>Login with Google</s></div>
+        <div class="anti-item"><span class="x">×</span><s>Anonymous telemetry</s></div>
+        <div class="anti-item"><span class="x">×</span><s>AI-powered anything</s></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="arch-section" id="architecture">
+  <div class="container">
+    <div class="section-label">How it works</div>
+    <h2 class="section-title">A disposable UI, and <em>a daemon that owns state.</em></h2>
+    <p class="section-kicker">
+      napkin is three pieces held together by well-defined IPC. Kill the UI, kill the window,
+      kill the whole renderer — your sessions don't care. The daemon keeps going.
+    </p>
+
+    <div class="arch-inner">
+      <div class="arch-diagram">
+        <div class="arch-col">
+          <div class="arch-box">
+            <div class="label">01 · Renderer</div>
+            <div class="title">Tauri UI <span class="v">(disposable)</span></div>
+            <p class="sub">Thin client. Renders the grid, forwards input, listens for events. Restarts in milliseconds.</p>
+            <div class="pill-row">
+              <span class="pill">Rust</span>
+              <span class="pill">WebView</span>
+              <span class="pill">xterm.js</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="arch-connector">
+          <div class="arch-arrow">
+            <div class="lbl"><span class="accent">UNIX socket</span> · JSON lines</div>
+            <svg viewBox="0 0 120 22" preserveAspectRatio="none">
+              <defs>
+                <marker id="arr-r1" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+                  <path d="M0,0 L8,4 L0,8 z" fill="#b82b23"/>
+                </marker>
+                <marker id="arr-l1" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+                  <path d="M8,0 L0,4 L8,8 z" fill="#b82b23"/>
+                </marker>
+              </defs>
+              <path d="M 4 7 Q 60 2 116 7" stroke="#b82b23" stroke-width="1.5" fill="none" marker-end="url(#arr-r1)"/>
+              <path d="M 116 17 Q 60 22 4 17" stroke="#b82b23" stroke-width="1.5" fill="none" marker-end="url(#arr-l1)"/>
+            </svg>
+            <div class="lbl">events · output</div>
+          </div>
+        </div>
+
+        <div class="arch-col">
+          <div class="arch-box daemon">
+            <div class="label">02 · Core</div>
+            <div class="title">napkind <span class="v">(always on)</span></div>
+            <p class="sub">Rust daemon. Owns PTYs, workspace state, scrollback, OSC 133, agent detection. Survives UI crashes, reboots, and SSH drops.</p>
+            <div class="pill-row">
+              <span class="pill">portable-pty</span>
+              <span class="pill">SQLite</span>
+              <span class="pill">OSC 133</span>
+              <span class="pill">agent sniffer</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="arch-connector">
+          <div class="arch-arrow">
+            <div class="lbl"><span class="accent">PTY</span> · ioctl</div>
+            <svg viewBox="0 0 120 22" preserveAspectRatio="none">
+              <path d="M 4 7 Q 60 2 116 7" stroke="#b82b23" stroke-width="1.5" fill="none" marker-end="url(#arr-r1)"/>
+              <path d="M 116 17 Q 60 22 4 17" stroke="#b82b23" stroke-width="1.5" fill="none" marker-end="url(#arr-l1)"/>
+            </svg>
+            <div class="lbl">bytes · signals</div>
+          </div>
+        </div>
+
+        <div class="arch-col">
+          <div class="arch-box">
+            <div class="label">03 · Shells</div>
+            <div class="title">$SHELL <span class="v">(any)</span></div>
+            <p class="sub">zsh, fish, bash, nu — or whatever you ssh into. napkin ships shell shims so OSC 133 works out of the box.</p>
+            <div class="pill-row">
+              <span class="pill">zsh</span>
+              <span class="pill">fish</span>
+              <span class="pill">bash</span>
+              <span class="pill">nu</span>
+              <span class="pill">ssh</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="arch-caption">the UI is disposable — the daemon owns state.</div>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="container">
+    <div class="section-label">Quickstart</div>
+    <h2 class="section-title">One line. Thirty seconds. <em>No account.</em></h2>
+
+    <div class="quickstart">
+      <div class="qs-card">
+        <h4>macOS <span class="os">homebrew</span></h4>
+        <p class="qs-sub">The fast path once the tap is live. Installs the app bundle and puts <code style="font-family:var(--mono);font-size:12px;background:var(--cream-2);padding:1px 5px;border-radius:3px">napkin</code> on your PATH.</p>
+        <div class="qs-code">
+          <pre><span class="cmt"># installs napkin + napkind</span>
+<span class="pr">$</span> brew install <span class="str">napkin-term/napkin/napkin</span>
+<span class="pr">$</span> napkin <span class="flag">--version</span>
+  napkin 0.1.0</pre>
+          <button class="copy-btn" data-copy="brew install napkin-term/napkin/napkin">Copy</button>
+        </div>
+        <div class="qs-meta">
+          <span>macOS 12+ · Apple Silicon &amp; Intel</span>
+        </div>
+      </div>
+
+      <div class="qs-card">
+        <h4>Linux &amp; macOS <span class="os">curl | sh</span></h4>
+        <p class="qs-sub">Static binary. Works on anything glibc 2.31+ or musl; macOS too.</p>
+        <div class="qs-code">
+          <pre><span class="pr">$</span> curl -fsSL napkin.world/install <span class="flag">|</span> sh
+<span class="pr">$</span> systemctl <span class="flag">--user</span> enable napkind</pre>
+          <button class="copy-btn" data-copy="curl -fsSL napkin.world/install | sh">Copy</button>
+        </div>
+        <div class="qs-meta">
+          <span>.deb · AppImage · .dmg</span>
+          <a href="https://github.com/johndockery/napkin" target="_blank" rel="noopener">build from source →</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <div class="row1"><img src="napkin.png" alt=""/> napkin</div>
+        <div class="tag">A terminal that feels like a workspace. Local-first, agent-aware, built in Rust. Early days — come kick the tires.</div>
+        <div class="license">MIT · © 2026 napkin authors</div>
+      </div>
+      <div class="foot-col">
+        <h6>Project</h6>
+        <a href="https://github.com/johndockery/napkin" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/johndockery/napkin/issues" target="_blank" rel="noopener">Issues</a>
+        <a href="https://github.com/johndockery/napkin/discussions" target="_blank" rel="noopener">Discussions</a>
+      </div>
+      <div class="foot-col">
+        <h6>Contact</h6>
+        <a href="mailto:hi@napkin.world">hi@napkin.world</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>$ napkin --version · 0.1.0</span>
+      <span class="cheers">served fresh, no telemetry ✶</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+(() => {
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+
+  // ——— Features (what's on the napkin) ———
+  const features = [
+    { num: '① pane splits & tabs', kbd: '⌘D',
+      title: 'Pane splits & tabs',
+      body: 'Keyboard-first, drag-to-resize, per-tab color. Muscle memory from tmux, no conf file to argue with.',
+      icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>` },
+    { num: '② shell integration', kbd: 'OSC 133',
+      title: 'Real shell integration',
+      body: 'Prompt boundaries, exit codes, cwd tracking — baked in for zsh, fish, bash, nu. Jump between commands like chapters.',
+      icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="4 8 8 12 4 16"/><line x1="12" y1="16" x2="20" y2="16"/></svg>` },
+    { num: '③ persistent daemon', kbd: 'napkind',
+      title: 'Persistent daemon',
+      body: 'Your workspace outlives the UI. Force-quit, reboot, kernel panic — reattach and every pane, every process is still running.',
+      icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/><path d="M12 4v2M12 18v2M4 12h2M18 12h2"/></svg>` },
+    { num: '④ structured scrollback', kbd: '⌘F',
+      title: 'Searchable, forever',
+      body: 'Every command indexed. Full-text search across every session you\'ve ever run. "What was that curl incantation from Tuesday?" is one search, not an hour of scrolling.',
+      icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg>` },
+    { num: '⑤ broadcast input', kbd: '⌘⇧B',
+      title: 'Broadcast, safely',
+      body: 'Type once, run on N hosts — with a loud scope indicator so you never accidentally rm-rf five prod boxes. Write-locks on the panes that matter.',
+      icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="1.5" fill="currentColor"/><path d="M7 7 C 4 10, 4 14, 7 17"/><path d="M17 7 C 20 10, 20 14, 17 17"/><path d="M4 4 C -1 8, -1 16, 4 20"/><path d="M20 4 C 25 8, 25 16, 20 20"/></svg>` },
+    { num: '⑥ SSH that works', kbd: 'own terminfo',
+      title: 'SSH without the pain',
+      body: 'xterm-256color on every box you touch. Clipboard passes cleanly through nested sessions. It just works.',
+      icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h6l2-3 2 6 2-3h6"/></svg>` },
+    { num: '⑦ agent-aware sidebar', kbd: '⌘J',
+      title: 'Agent fleet sidebar',
+      body: 'Detects Claude Code, Codex, aider, Cursor. Shows live state, tokens spent, time thinking. ⌘J jumps to whichever one is waiting on you.',
+      icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="6" height="16" rx="1"/><line x1="12" y1="7" x2="21" y2="7"/><line x1="12" y1="12" x2="21" y2="12"/><line x1="12" y1="17" x2="18" y2="17"/></svg>` },
+    { num: '⑧ diff before apply', kbd: '⌘↵',
+      title: 'Diff preview for agents',
+      body: 'Every agent edit surfaces as a unified diff you can skim, accept, reject, or tweak in place. No more "wait, what did Claude just change?"',
+      icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 4v16M16 4v16M3 9h5M16 9h5M3 15h5M16 15h5"/></svg>` },
+  ];
+  const fg = $('#features-grid');
+  if (fg) {
+    fg.innerHTML = features.map(f => `
+      <div class="feature">
+        <div class="feature-num">${f.num}</div>
+        <div class="feature-ico">${f.icon}</div>
+        <h3 class="feature-title">${f.title}<span class="kbd">${f.kbd}</span></h3>
+        <p class="feature-body">${f.body}</p>
+      </div>
+    `).join('');
+  }
+
+  // ——— Hero terminal variants ———
+  const VARIANTS = {
+    panes: {
+      panes: [
+        { name: 'web', cwd: '~/src/napkin/web', pid: '48219', focused: true, lines: [
+          { t: 'prompt', v: [{c:'pr',t:'›'},{c:'',t:' '},{c:'pth',t:'web'},{c:'',t:' '},{c:'git',t:'(main)'}] },
+          { t: 'cmd', v: 'pnpm dev --host' },
+          { t: 'out-info', v: '▲ next 14.2.3 · local 0.0.0.0:3000' },
+          { t: 'out-dim', v: '  network http://10.0.1.14:3000' },
+          { t: 'out-ok', v: '✓ ready in 847ms' },
+          { t: 'out', v: '○ compiling /app/page.tsx ...' },
+          { t: 'out-ok', v: '✓ compiled /app in 312ms' },
+          { t: 'out-dim', v: 'GET /  200  ·  84ms' },
+          { t: 'out-dim', v: 'GET /api/sessions  200  ·  12ms' },
+          { t: 'cursor' },
+        ] },
+        { name: 'core', cwd: '~/src/napkin/core', pid: '48220', lines: [
+          { t: 'prompt', v: [{c:'pr',t:'›'},{c:'',t:' '},{c:'pth',t:'core'},{c:'',t:' '},{c:'git',t:'(daemon-ipc)'}] },
+          { t: 'cmd', v: 'cargo watch -x "test parser"' },
+          { t: 'out-dim', v: '[Running: cargo test parser]' },
+          { t: 'out', v: 'running 14 tests' },
+          { t: 'out-ok', v: 'test parser::osc133::prompt_boundary  ok' },
+          { t: 'out-ok', v: 'test parser::osc133::exit_code         ok' },
+          { t: 'out-ok', v: 'test parser::osc133::cwd_tracking      ok' },
+          { t: 'out-ok', v: 'test parser::pty::resize_event         ok' },
+          { t: 'out', v: 'test parser::pty::bracketed_paste      .' },
+        ] },
+        { name: 'logs', cwd: '~/.local/share/napkin', pid: '41903', lines: [
+          { t: 'prompt', v: [{c:'pr',t:'›'},{c:'',t:' '},{c:'pth',t:'napkin'}] },
+          { t: 'cmd', v: 'tail -f napkind.log' },
+          { t: 'out-dim', v: '14:32:04 [info]  daemon up · pid 41903' },
+          { t: 'out-dim', v: '14:32:07 [info]  attach · ui-rev 7c3f9e' },
+          { t: 'out-dim', v: '14:32:12 [info]  pty #4 · exit 0 · 284ms' },
+          { t: 'out-warn', v: '14:33:01 [warn]  scrollback 84MB · vacuum queued' },
+          { t: 'out-dim', v: '14:33:14 [info]  agent · claude-code · pty #2' },
+          { t: 'out-dim', v: '14:33:58 [info]  agent wait · claude-code' },
+        ] },
+        { name: 'agent', cwd: '~/src/napkin', pid: '48944', lines: [
+          { t: 'prompt', v: [{c:'pr',t:'›'},{c:'',t:' '},{c:'pth',t:'napkin'}] },
+          { t: 'cmd', v: 'claude' },
+          { t: 'out-info', v: '◆ claude-code · sonnet 4.5' },
+          { t: 'out-dim', v: '  context · core/parser/osc133.rs (+2)' },
+          { t: 'out', v: '  Analyzing the OSC 133 C parser...' },
+          { t: 'out', v: '  I can add a test for the exit code' },
+          { t: 'out', v: '  edge case where the shell emits \\e]133;D' },
+          { t: 'out', v: '  without an argument. Should I proceed?' },
+          { t: 'out-warn', v: '  › waiting for response ...' },
+          { t: 'cursor' },
+        ] },
+      ],
+      agents: [
+        { s: 'wait', name: 'claude-code', meta: 'pty #2 · needs input · 1m 14s' },
+        { s: 'run',  name: 'codex',       meta: 'pty #7 · thinking' },
+        { s: 'done', name: 'aider',       meta: 'pty #5 · finished · 3m' },
+        { s: 'idle', name: 'cursor-cli',  meta: 'pty #9 · idle' },
+      ]
+    },
+    agents: {
+      panes: [
+        { name: 'claude', cwd: '~/work/napkin-web', pid: '52104', focused: true, lines: [
+          { t: 'out-info', v: '◆ claude-code · plan mode' },
+          { t: 'out', v: '  Refactoring the pane-resize gesture to use' },
+          { t: 'out', v: '  the shared drag controller instead of' },
+          { t: 'out', v: '  bespoke pointer events.' },
+          { t: 'out-dim', v: '' },
+          { t: 'out-dim', v: '  1. extract useDragController hook' },
+          { t: 'out-dim', v: '  2. migrate PaneSplitter' },
+          { t: 'out-dim', v: '  3. migrate TabDivider' },
+          { t: 'out-warn', v: '  › approve plan? [y/n]' },
+          { t: 'cursor' },
+        ] },
+        { name: 'codex', cwd: '~/work/napkin-core', pid: '52289', lines: [
+          { t: 'out-info', v: '◆ codex' },
+          { t: 'out', v: '  Writing tests for broadcast scope...' },
+          { t: 'out-dim', v: '  + core/broadcast/scope_test.rs' },
+          { t: 'out-ok', v: '  ✓ broadcast::scope::session_only' },
+          { t: 'out-ok', v: '  ✓ broadcast::scope::tab_only' },
+          { t: 'out', v: '  · broadcast::scope::regex_matcher ...' },
+          { t: 'cursor' },
+        ] },
+        { name: 'aider', cwd: '~/work/napkind', pid: '49112', lines: [
+          { t: 'out-info', v: '◆ aider' },
+          { t: 'out-ok', v: '  Applied 3 edits across 2 files.' },
+          { t: 'out-dim', v: '  M  daemon/src/ipc.rs' },
+          { t: 'out-dim', v: '  M  daemon/src/session.rs' },
+          { t: 'out-ok', v: '  commit 4f21d0c · done' },
+          { t: 'prompt', v: [{c:'pr',t:'›'},{c:'',t:' '},{c:'pth',t:'napkind'},{c:'',t:' '},{c:'git',t:'(main)'}] },
+          { t: 'cursor' },
+        ] },
+        { name: 'you', cwd: '~/work', pid: '48001', lines: [
+          { t: 'prompt', v: [{c:'pr',t:'›'},{c:'',t:' '},{c:'pth',t:'work'}] },
+          { t: 'cmd', v: 'napkin ls' },
+          { t: 'out-warn', v: '● claude-code   waiting (1m 14s)' },
+          { t: 'out-info', v: '● codex         running' },
+          { t: 'out-ok',   v: '● aider         done' },
+          { t: 'out-dim',  v: '○ cursor-cli    idle' },
+          { t: 'cursor' },
+        ] },
+      ],
+      agents: [
+        { s: 'wait', name: 'claude-code', meta: 'plan approval · 1m 14s' },
+        { s: 'run',  name: 'codex',       meta: 'running tests' },
+        { s: 'done', name: 'aider',       meta: '3 edits applied' },
+        { s: 'idle', name: 'cursor-cli',  meta: 'idle' },
+      ]
+    },
+    ssh: {
+      panes: [
+        { name: 'ssh · fly.io', cwd: 'fly-iad-01:/app', pid: 'remote', focused: true, lines: [
+          { t: 'out-dim', v: '● connected · fly-iad-01 · xterm-256color' },
+          { t: 'prompt', v: [{c:'pr',t:'›'},{c:'',t:' '},{c:'pth',t:'fly-iad-01'},{c:'',t:':'},{c:'pth',t:'/app'}] },
+          { t: 'cmd', v: 'journalctl -u napkind -n 5' },
+          { t: 'out-dim', v: 'Apr 22 14:32 napkind[1203]: ready' },
+          { t: 'out-dim', v: 'Apr 22 14:32 napkind[1203]: attach tty/pts/2' },
+          { t: 'out-dim', v: 'Apr 22 14:33 napkind[1203]: session restored' },
+          { t: 'prompt', v: [{c:'pr',t:'›'},{c:'',t:' '},{c:'pth',t:'fly-iad-01'}] },
+          { t: 'cmd', v: 'pbcopy < /etc/hostname' },
+          { t: 'out-ok', v: '✓ clipboard passed through 2 ssh hops' },
+          { t: 'cursor' },
+        ] },
+        { name: 'docker', cwd: 'debian:/workspace', pid: 'docker', lines: [
+          { t: 'out-dim', v: '● docker exec -it app bash' },
+          { t: 'prompt', v: [{c:'pr',t:'›'},{c:'',t:' '},{c:'pth',t:'app'}] },
+          { t: 'cmd', v: 'echo $TERM' },
+          { t: 'out', v: 'xterm-256color' },
+          { t: 'prompt', v: [{c:'pr',t:'›'},{c:'',t:' '},{c:'pth',t:'app'}] },
+          { t: 'cmd', v: 'nvim src/main.rs' },
+          { t: 'out-dim', v: '[nvim · true color · 28ms startup]' },
+        ] },
+        { name: 'broadcast', cwd: '3 hosts', pid: 'bcast', lines: [
+          { t: 'out-warn', v: '⚠ broadcast active · scope: ssh:*' },
+          { t: 'out-dim', v: '  → fly-iad-01' },
+          { t: 'out-dim', v: '  → fly-sea-02' },
+          { t: 'out-dim', v: '  → fly-fra-01' },
+          { t: 'prompt', v: [{c:'pr',t:'›'},{c:'',t:' '},{c:'pth',t:'* bcast'}] },
+          { t: 'cmd', v: 'systemctl restart napkind' },
+          { t: 'out-ok', v: '✓ fly-iad-01 · ok' },
+          { t: 'out-ok', v: '✓ fly-sea-02 · ok' },
+          { t: 'out-ok', v: '✓ fly-fra-01 · ok' },
+        ] },
+        { name: 'local', cwd: '~/ops', pid: '48001', lines: [
+          { t: 'prompt', v: [{c:'pr',t:'›'},{c:'',t:' '},{c:'pth',t:'ops'}] },
+          { t: 'cmd', v: 'napkin workspace list' },
+          { t: 'out', v: 'fly-iad-01   attached · 42m' },
+          { t: 'out', v: 'fly-sea-02   attached · 42m' },
+          { t: 'out', v: 'fly-fra-01   attached · 42m' },
+          { t: 'out-dim', v: 'home-nas     detached · resumable' },
+          { t: 'cursor' },
+        ] },
+      ],
+      agents: [
+        { s: 'idle', name: 'claude-code', meta: 'local · idle' },
+        { s: 'idle', name: 'codex',       meta: 'local · idle' },
+        { s: 'done', name: 'ssh agent',   meta: '3 hosts connected' },
+        { s: 'idle', name: 'aider',       meta: 'local · idle' },
+      ]
+    },
+    search: {
+      panes: [
+        { name: 'scrollback', cwd: 'search · cargo bench', pid: 'search', focused: true, lines: [
+          { t: 'out-info', v: '⌘F  "cargo bench"' },
+          { t: 'out-dim', v: '───────────────────────────────' },
+          { t: 'out', v: '14:22  › core (main)' },
+          { t: 'out-dim', v: '        $ cargo bench -p core/parser' },
+          { t: 'out', v: '11:07  › napkin (main)' },
+          { t: 'out-dim', v: '        $ cargo bench --all' },
+          { t: 'out', v: '09:14  › core (parser)' },
+          { t: 'out-dim', v: '        $ cargo bench --features=simd' },
+          { t: 'out-ok', v: '        exit 0  ·  3m 14s' },
+          { t: 'out-warn', v: '3 matches · ⌘↵ to jump' },
+          { t: 'cursor' },
+        ] },
+        { name: 'history', cwd: '~/src', pid: '48219', lines: [
+          { t: 'prompt', v: [{c:'pr',t:'›'},{c:'',t:' '},{c:'pth',t:'src'}] },
+          { t: 'cmd', v: 'napkin history --since 1h' },
+          { t: 'out-dim', v: '14:32  cargo bench -p core' },
+          { t: 'out-dim', v: '14:28  git diff HEAD~3' },
+          { t: 'out-dim', v: '14:21  rg "osc_133" core/' },
+          { t: 'out-dim', v: '14:15  cargo test parser' },
+          { t: 'out-dim', v: '13:59  git commit -m "parser"' },
+          { t: 'out-dim', v: '13:44  pnpm dev --host' },
+        ] },
+        { name: 'bookmarks', cwd: '~/notes', pid: 'nk', lines: [
+          { t: 'out-info', v: '★ bookmarks · 4' },
+          { t: 'out-dim', v: '───────────────────────────────' },
+          { t: 'out', v: '★ flaky test — parser::mod_test' },
+          { t: 'out-dim', v: '  web · 14:22 yesterday' },
+          { t: 'out', v: '★ perf regression — 11%' },
+          { t: 'out-dim', v: '  core · 09:14 yesterday' },
+          { t: 'out', v: '★ rust nightly bug note' },
+          { t: 'out-dim', v: '  logs · 2d ago' },
+        ] },
+        { name: 'replay', cwd: '~/src/napkin', pid: 'replay', lines: [
+          { t: 'out-info', v: '▶ replay · pty #4 · 14:22:04' },
+          { t: 'out-dim', v: '  (↔ scrub · space to play)' },
+          { t: 'prompt', v: [{c:'pr',t:'›'},{c:'',t:' '},{c:'pth',t:'core'}] },
+          { t: 'cmd', v: 'cargo bench -p core/parser' },
+          { t: 'out', v: '  benchmarking osc_133/parse' },
+          { t: 'out-ok', v: '  time:   [2.1µs 2.2µs 2.3µs]' },
+          { t: 'out-dim', v: '  (frame 284 / 1 204)' },
+          { t: 'cursor' },
+        ] },
+      ],
+      agents: [
+        { s: 'idle', name: 'claude-code', meta: 'idle' },
+        { s: 'done', name: 'codex',       meta: 'done · 12m ago' },
+        { s: 'idle', name: 'aider',       meta: 'idle' },
+        { s: 'idle', name: 'cursor-cli',  meta: 'idle' },
+      ]
+    },
+  };
+
+  const escapeHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  const renderPane = (p) => {
+    const lines = p.lines.map(l => {
+      if (l.t === 'cursor') return `<div><span class="cursor"></span></div>`;
+      if (l.t === 'prompt') return `<div class="prompt-line">${l.v.map(s => `<span class="${s.c}">${escapeHtml(s.t)}</span>`).join('')}</div>`;
+      if (l.t === 'cmd') return `<div><span style="color:var(--term-dimmer)">$ </span><span style="color:var(--term-fg)">${escapeHtml(l.v)}</span></div>`;
+      return `<div class="${l.t}">${escapeHtml(l.v)}</div>`;
+    }).join('');
+    return `
+      <div class="pane${p.focused ? ' focused' : ''}">
+        <div class="pane-head">
+          <span class="pane-name">${escapeHtml(p.name)}</span>
+          <span class="sep">·</span>
+          <span class="cwd">${escapeHtml(p.cwd)}</span>
+          <span class="pid">${escapeHtml(p.pid)}</span>
+        </div>
+        <div class="pane-content">${lines}</div>
+      </div>
+    `;
+  };
+
+  const renderAgents = (list) => {
+    const waitCount = list.filter(a => a.s === 'wait').length;
+    return `
+      <h5>Agents <span class="count">${waitCount}/${list.length}</span></h5>
+      ${list.map(a => `
+        <div class="agent-row" data-state="${a.s}">
+          <span class="agent-icon"></span>
+          <div style="flex:1">
+            <div class="agent-name">${escapeHtml(a.name)}</div>
+            <div class="agent-meta">${escapeHtml(a.meta)}</div>
+          </div>
+        </div>
+      `).join('')}
+      <div class="agents-footer"><span>⌘J jump to next</span><span>?</span></div>
+    `;
+  };
+
+  const setVariant = (name) => {
+    const v = VARIANTS[name] || VARIANTS.panes;
+    $('#panes').innerHTML = v.panes.map(renderPane).join('');
+    $('#agents').innerHTML = renderAgents(v.agents);
+  };
+
+  setVariant('panes');
+
+  // ——— Tab switching ———
+  const tabVariants = ['panes', 'agents', 'ssh', 'search'];
+  $$('#tabs .term-tab').forEach((tab, i) => {
+    if (i >= tabVariants.length) return;
+    tab.addEventListener('click', () => {
+      $$('#tabs .term-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      setVariant(tabVariants[i]);
+    });
+  });
+
+  // ——— Copy buttons ———
+  $$('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(btn.dataset.copy || ''); } catch {}
+      const old = btn.textContent;
+      btn.classList.add('copied');
+      btn.textContent = '✓ copied';
+      setTimeout(() => { btn.classList.remove('copied'); btn.textContent = old; }, 1400);
+    });
+  });
+  const heroInstall = $('#copy-install-hero');
+  if (heroInstall) heroInstall.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText('curl -fsSL napkin.world/install | sh'); } catch {}
+    const label = $('#install-hero-text');
+    const old = label.textContent;
+    label.textContent = 'copied ✓';
+    setTimeout(() => { label.textContent = old; }, 1400);
+  });
+})();
+</script>
+
+</body>
+</html>
