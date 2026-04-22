@@ -12,6 +12,7 @@ import {
   onPtyOutput,
 } from "./ipc.ts";
 import { createNotificationGate } from "./notifications.ts";
+import { createCommandPalette, type CommandEntry } from "./commands.ts";
 import { createHelpOverlay } from "./help.ts";
 import { createPanePalette, type PalettePaneEntry } from "./palette.ts";
 import { createSearchController } from "./search.ts";
@@ -133,6 +134,130 @@ export async function bootWorkspace(
   });
 
   const help = createHelpOverlay(document);
+
+  const commandPalette = createCommandPalette(document, {
+    listCommands: (): CommandEntry[] => [
+      {
+        id: "new-tab",
+        category: "Tabs",
+        title: "New tab",
+        shortcut: "⌘T",
+        run: () => runAsync(() => openNewTab(), "failed to open new tab"),
+      },
+      {
+        id: "close-pane",
+        category: "Tabs",
+        title: "Close pane",
+        shortcut: "⌘W",
+        run: () => runAsync(() => closeActivePane(), "failed to close pane"),
+      },
+      {
+        id: "next-tab",
+        category: "Tabs",
+        title: "Next tab",
+        shortcut: "⌘⇧]",
+        run: () => cycleTab(1),
+      },
+      {
+        id: "previous-tab",
+        category: "Tabs",
+        title: "Previous tab",
+        shortcut: "⌘⇧[",
+        run: () => cycleTab(-1),
+      },
+      {
+        id: "rename-tab",
+        category: "Tabs",
+        title: "Rename tab",
+        run: () => {
+          if (state.activeTab) {
+            startTabRename(state.activeTab, () => updateTabLabel(state.activeTab!));
+          }
+        },
+      },
+      {
+        id: "split-horizontal",
+        category: "Panes",
+        title: "Split pane horizontally",
+        shortcut: "⌘D",
+        run: () =>
+          runAsync(() => splitActive("horizontal"), "failed to split pane"),
+      },
+      {
+        id: "split-vertical",
+        category: "Panes",
+        title: "Split pane vertically",
+        shortcut: "⌘⇧D",
+        run: () =>
+          runAsync(() => splitActive("vertical"), "failed to split pane"),
+      },
+      {
+        id: "clear-pane",
+        category: "Panes",
+        title: "Clear active pane",
+        shortcut: "⌘K",
+        run: () => clearActive(),
+      },
+      {
+        id: "toggle-broadcast",
+        category: "Panes",
+        title: state.activeTab?.broadcastInput
+          ? "Turn broadcast input off"
+          : "Turn broadcast input on",
+        shortcut: "⌘⇧B",
+        run: () => toggleBroadcast(),
+      },
+      {
+        id: "pane-palette",
+        category: "Navigate",
+        title: "Go to pane…",
+        shortcut: "⌘P",
+        run: () => palette.toggle("all"),
+      },
+      {
+        id: "agent-palette",
+        category: "Navigate",
+        title: "Go to agent…",
+        shortcut: "⌘⇧A",
+        run: () => palette.toggle("agents"),
+      },
+      {
+        id: "search-pane",
+        category: "Navigate",
+        title: "Search within pane",
+        shortcut: "⌘F",
+        run: () => search.toggle(),
+      },
+      {
+        id: "font-bigger",
+        category: "Display",
+        title: "Font: bigger",
+        shortcut: "⌘=",
+        run: () => bumpFontSize(1),
+      },
+      {
+        id: "font-smaller",
+        category: "Display",
+        title: "Font: smaller",
+        shortcut: "⌘-",
+        run: () => bumpFontSize(-1),
+      },
+      {
+        id: "font-reset",
+        category: "Display",
+        title: "Font: reset",
+        shortcut: "⌘0",
+        run: () => resetFontSize(),
+      },
+      {
+        id: "toggle-help",
+        category: "Help",
+        title: "Show keyboard shortcuts",
+        shortcut: "⌘/",
+        run: () => help.toggle(),
+      },
+    ],
+  });
 
   const listLeaves = (): LeafPane[] => {
     const leaves: LeafPane[] = [];
@@ -679,6 +804,7 @@ export async function bootWorkspace(
     findNextInPane: () => search.findNext(),
     findPreviousInPane: () => search.findPrevious(),
     toggleHelp: () => help.toggle(),
+    toggleCommandPalette: () => commandPalette.toggle(),
   });
 
   window.addEventListener("resize", () => {

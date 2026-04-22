@@ -1,6 +1,6 @@
 //! Client bridge from the Tauri process to the `napkind` unix-socket daemon.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
@@ -16,11 +16,16 @@ use tauri::AppHandle;
 use crate::events::dispatch_event;
 
 type PendingReplies = Arc<Mutex<HashMap<u64, Sender<ServerOp>>>>;
+type SubscribedSessions = Arc<Mutex<HashSet<String>>>;
 
 pub(crate) struct Client {
     tx: Sender<ClientMsg>,
     pending: PendingReplies,
     next_id: AtomicU64,
+    /// Sessions this Tauri process has already told napkind to subscribe to.
+    /// Survives HMR page reloads, so a soft refresh can't append duplicate
+    /// subscribers on the daemon and multiply Output events back to us.
+    subscribed: SubscribedSessions,
 }
 
 impl Client {
@@ -47,7 +52,14 @@ impl Client {
             tx: dead_tx,
             pending: Arc::new(Mutex::new(HashMap::new())),
             next_id: AtomicU64::new(0),
+            subscribed: Arc::new(Mutex::new(HashSet::new())),
         }
+    }
+
+    /// Atomically record that this session has been subscribed and report
+    /// whether the caller is the first subscriber for that id.
+    pub(crate) fn mark_subscribed(&self, session_id: &str) -> bool {
+        lock_or_recover(&self.subscribed).insert(session_id.to_string())
     }
 }
 
@@ -97,6 +109,7 @@ pub(crate) fn start_client(app: AppHandle) -> Result<Client, String> {
         tx,
         pending,
         next_id: AtomicU64::new(1),
+        subscribed: Arc::new(Mutex::new(HashSet::new())),
     })
 }
 

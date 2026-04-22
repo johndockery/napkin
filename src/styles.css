@@ -285,6 +285,33 @@ html, body {
   font-size: 11.5px;
 }
 
+.napkin-command-item {
+  grid-template-columns: auto 1fr auto;
+  display: grid;
+  align-items: center;
+  gap: 10px;
+}
+
+.napkin-command-category {
+  color: var(--fg-dim);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-weight: 600;
+  min-width: 60px;
+}
+
+.napkin-command-shortcut {
+  color: var(--fg-dim);
+  font-size: 11px;
+  justify-self: end;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  white-space: nowrap;
+}
+
 .napkin-palette-empty {
   padding: 32px 16px;
   text-align: center;

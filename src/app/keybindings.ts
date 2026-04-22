@@ -17,6 +17,7 @@ export interface KeybindingHandlers {
   readonly findNextInPane: () => void;
   readonly findPreviousInPane: () => void;
   readonly toggleHelp: () => void;
+  readonly toggleCommandPalette: () => void;
 }
 
 export function registerKeybindings(
@@ -67,6 +68,11 @@ export function registerKeybindings(
     }
     if (key === "p" && !event.shiftKey) {
       handlers.togglePanePalette();
+      event.preventDefault();
+      return;
+    }
+    if (key === "p" && event.shiftKey) {
+      handlers.toggleCommandPalette();
       event.preventDefault();
       return;
     }

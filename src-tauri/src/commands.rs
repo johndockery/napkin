@@ -163,14 +163,20 @@ pub(crate) fn pty_subscribe(
     rows: u16,
     cols: u16,
 ) -> Result<(), String> {
-    match client.request(ClientOp::Subscribe {
-        session_id: session_id.clone(),
-    })? {
-        ServerOp::Ok => {}
-        ServerOp::Err { error } => return Err(error),
-        other => return Err(format!("unexpected reply: {other:?}")),
+    // Only send a Subscribe op on the first subscribe for this session in
+    // this Tauri process lifetime. HMR page reloads re-run the boot path and
+    // would otherwise append the same client tx to the daemon's subscriber
+    // list again, multiplying every Output event back to us.
+    if client.mark_subscribed(&session_id) {
+        match client.request(ClientOp::Subscribe {
+            session_id: session_id.clone(),
+        })? {
+            ServerOp::Ok => {}
+            ServerOp::Err { error } => return Err(error),
+            other => return Err(format!("unexpected reply: {other:?}")),
+        }
     }
-    // Send an immediate resize so the existing PTY matches the fresh window.
+    // Always resize — the window may have changed size across the reload.
     match client.request(ClientOp::Resize {
         session_id,
         rows,
