@@ -85,6 +85,13 @@ pub enum ServerOp {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         exit: Option<i32>,
     },
+    /// The foreground command on a session has been classified as a known
+    /// agent, or cleared (when `agent` is `None`).
+    Agent {
+        session_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

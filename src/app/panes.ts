@@ -77,6 +77,7 @@ export function createLeafPane(
     mountState: "new",
     cwd: "~",
     runState: "idle",
+    agent: null,
   };
 
   element.addEventListener("mousedown", () => options.onFocusRequested(leaf), true);

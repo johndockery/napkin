@@ -16,6 +16,9 @@ pub(crate) struct Session {
     pub writer: Box<dyn Write + Send>,
     pub cwd: String,
     pub subscribers: Vec<Sender<ServerMsg>>,
+    /// Agent classification for the currently-executing foreground command,
+    /// or None when idle or running a non-agent command.
+    pub current_agent: Option<&'static str>,
 }
 
 pub(crate) fn spawn_session(
@@ -76,6 +79,7 @@ pub(crate) fn spawn_session(
         writer,
         cwd: start_cwd.clone(),
         subscribers: vec![initial_subscriber],
+        current_agent: None,
     }));
 
     // Reader thread
@@ -182,7 +186,64 @@ fn handle_osc(session: &Arc<Mutex<Session>>, session_id: &str, ev: OscEvent) {
                     },
                 },
             );
+            let had_agent = {
+                let mut s = lock_or_recover(session);
+                s.current_agent.take().is_some()
+            };
+            if had_agent {
+                broadcast(
+                    session,
+                    ServerMsg {
+                        id: None,
+                        op: ServerOp::Agent {
+                            session_id: session_id.to_string(),
+                            agent: None,
+                        },
+                    },
+                );
+            }
         }
+        OscEvent::CommandLine(cmd) => {
+            let classified = classify_agent(&cmd);
+            let changed = {
+                let mut s = lock_or_recover(session);
+                if s.current_agent == classified {
+                    false
+                } else {
+                    s.current_agent = classified;
+                    true
+                }
+            };
+            if changed {
+                broadcast(
+                    session,
+                    ServerMsg {
+                        id: None,
+                        op: ServerOp::Agent {
+                            session_id: session_id.to_string(),
+                            agent: classified.map(|name| name.to_string()),
+                        },
+                    },
+                );
+            }
+        }
+    }
+}
+
+/// Map a shell command to a known AI-agent name, or None.
+/// Only matches on the first whitespace-separated token's basename, so it
+/// ignores args and absolute paths.
+fn classify_agent(command_line: &str) -> Option<&'static str> {
+    let first = command_line.split_whitespace().next()?;
+    let binary = first.rsplit('/').next()?;
+    match binary {
+        "claude" | "claude-code" => Some("claude"),
+        "codex" => Some("codex"),
+        "cursor-agent" => Some("cursor"),
+        "aider" => Some("aider"),
+        "opencode" => Some("opencode"),
+        "gemini" => Some("gemini"),
+        _ => None,
     }
 }
 

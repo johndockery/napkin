@@ -23,6 +23,8 @@ export interface LeafPane {
   mountState: PaneMountState;
   cwd: string;
   runState: PaneRunState;
+  /** Foreground agent name (e.g. "claude", "codex") or null when none. */
+  agent: string | null;
 }
 
 export interface SplitPane {
@@ -45,6 +47,7 @@ export interface Tab {
   readonly element: HTMLDivElement;
   readonly labelElement: HTMLSpanElement;
   readonly statusElement: HTMLSpanElement;
+  readonly agentElement: HTMLSpanElement;
   readonly closeButton: HTMLButtonElement;
   root: PaneNode | null;
   activeLeaf: LeafPane | null;

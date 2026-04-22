@@ -27,7 +27,13 @@ unset __napkin_zdotdir
 
 autoload -Uz add-zsh-hook 2>/dev/null
 
-__napkin_preexec() { printf '\e]133;C;\a' }
+__napkin_preexec() {
+  # OSC 8274 ; cmd ; <command line> ST — private napkin sequence carrying the
+  # shell command being executed, used for agent detection on the daemon side.
+  # Emitted just before the standard OSC 133 ; C mark so consumers that only
+  # know about 133 keep working.
+  printf '\e]8274;cmd;%s\a\e]133;C;\a' "${1//$'\r'/}"
+}
 __napkin_precmd() {
   local ec=$?
   printf '\e]133;D;%d\a\e]133;A\a\e]7;file://%s%s\a' \

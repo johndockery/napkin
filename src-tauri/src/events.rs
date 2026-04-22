@@ -30,6 +30,12 @@ pub(crate) fn dispatch_event(app: &AppHandle, op: ServerOp) {
                 serde_json::json!({ "session_id": session_id, "mark": mark, "exit": exit }),
             );
         }
+        ServerOp::Agent { session_id, agent } => {
+            let _ = app.emit(
+                "pane-agent",
+                serde_json::json!({ "session_id": session_id, "agent": agent }),
+            );
+        }
         _ => {}
     }
 }

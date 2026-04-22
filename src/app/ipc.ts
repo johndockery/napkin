@@ -21,6 +21,11 @@ interface RawPaneMarkEvent {
   readonly exit?: number | null;
 }
 
+interface RawPaneAgentEvent {
+  readonly session_id: string;
+  readonly agent?: string | null;
+}
+
 export interface PtySpawnArgs {
   readonly rows: number;
   readonly cols: number;
@@ -47,6 +52,12 @@ export interface PaneMarkEvent {
   readonly sessionId: string;
   readonly mark: "A" | "B" | "C" | "D";
   readonly exit: number | null;
+}
+
+/** The foreground command on a pane has been classified (or cleared). */
+export interface PaneAgentEvent {
+  readonly sessionId: string;
+  readonly agent: string | null;
 }
 
 export async function spawnPty(args: PtySpawnArgs): Promise<string> {
@@ -116,6 +127,17 @@ export async function onPaneMark(
       sessionId: payload.session_id,
       mark,
       exit: payload.exit ?? null,
+    });
+  });
+}
+
+export async function onPaneAgent(
+  handler: (event: PaneAgentEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<RawPaneAgentEvent>("pane-agent", ({ payload }) => {
+    handler({
+      sessionId: payload.session_id,
+      agent: payload.agent ?? null,
     });
   });
 }

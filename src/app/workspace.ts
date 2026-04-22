@@ -1,7 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type { ErrorReporter } from "./errors.ts";
-import { onPaneCwd, onPaneMark, onPtyExit, onPtyOutput } from "./ipc.ts";
+import { onPaneAgent, onPaneCwd, onPaneMark, onPtyExit, onPtyOutput } from "./ipc.ts";
 import { registerKeybindings } from "./keybindings.ts";
 import {
   createLeafPane,
@@ -19,6 +19,7 @@ import {
   bindTabEvents,
   createTabElements,
   mountTab,
+  setTabAgent,
   setTabRunState,
   startTabRename,
   updateTabLabel,
@@ -129,6 +130,7 @@ export async function bootWorkspace(
 
     updateTabLabel(tab);
     setTabRunState(tab, leaf.runState);
+    setTabAgent(tab, leaf.agent);
   };
 
   const syncBroadcastState = (tab: Tab): void => {
@@ -427,6 +429,17 @@ export async function bootWorkspace(
         scheduleIdle(leaf, COMPLETION_FLASH_MS[outcome]);
         break;
       }
+    }
+  });
+
+  await onPaneAgent(({ sessionId, agent }) => {
+    const leaf = state.leavesBySessionId.get(sessionId);
+    if (!leaf || leaf.mountState === "disposed") {
+      return;
+    }
+    leaf.agent = agent;
+    if (leaf.tab.activeLeaf === leaf) {
+      setTabAgent(leaf.tab, agent);
     }
   });
 

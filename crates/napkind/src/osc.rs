@@ -7,6 +7,9 @@ pub enum OscEvent {
     PromptStart,
     CommandStart,
     CommandEnd(Option<i32>),
+    /// Private napkin OSC 8274 ; cmd ; <command line>.
+    /// Emitted by the zsh shim just before OSC 133 ; C.
+    CommandLine(String),
 }
 
 pub struct OscScanner {
@@ -81,6 +84,14 @@ fn parse_osc(payload: &[u8]) -> Option<OscEvent> {
                 "D" => Some(OscEvent::CommandEnd(
                     parts.next().and_then(|s| s.parse().ok()),
                 )),
+                _ => None,
+            }
+        }
+        "8274" => {
+            // Private napkin OSC. Currently one subtype: `cmd;<command line>`.
+            let (tag, body) = rest.split_once(';').unwrap_or((rest, ""));
+            match tag {
+                "cmd" => Some(OscEvent::CommandLine(body.to_string())),
                 _ => None,
             }
         }

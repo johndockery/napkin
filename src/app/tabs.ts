@@ -9,6 +9,7 @@ export interface TabEventHandlers {
 export interface TabElements {
   readonly element: HTMLDivElement;
   readonly statusElement: HTMLSpanElement;
+  readonly agentElement: HTMLSpanElement;
   readonly labelElement: HTMLSpanElement;
   readonly closeButton: HTMLButtonElement;
 }
@@ -23,6 +24,10 @@ export function createTabElements(id: string): TabElements {
   statusElement.dataset.state = "idle";
   statusElement.setAttribute("aria-hidden", "true");
 
+  const agentElement = document.createElement("span");
+  agentElement.className = "tab-agent";
+  agentElement.hidden = true;
+
   const labelElement = document.createElement("span");
   labelElement.className = "tab-label";
   labelElement.textContent = "~";
@@ -33,11 +38,12 @@ export function createTabElements(id: string): TabElements {
   closeButton.textContent = "×";
   closeButton.title = "Close tab";
 
-  element.append(statusElement, labelElement, closeButton);
+  element.append(statusElement, agentElement, labelElement, closeButton);
 
   return {
     element,
     statusElement,
+    agentElement,
     labelElement,
     closeButton,
   };
@@ -45,6 +51,18 @@ export function createTabElements(id: string): TabElements {
 
 export function setTabRunState(tab: Tab, state: PaneRunState): void {
   tab.statusElement.dataset.state = state;
+}
+
+export function setTabAgent(tab: Tab, agent: string | null): void {
+  if (!agent) {
+    tab.agentElement.hidden = true;
+    tab.agentElement.textContent = "";
+    delete tab.agentElement.dataset.agent;
+    return;
+  }
+  tab.agentElement.hidden = false;
+  tab.agentElement.textContent = agent;
+  tab.agentElement.dataset.agent = agent;
 }
 
 export function bindTabEvents(tab: Tab, handlers: TabEventHandlers): void {

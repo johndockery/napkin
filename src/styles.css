@@ -139,6 +139,27 @@ html, body {
   100% { box-shadow: 0 0 0 0 rgba(245, 167, 66, 0);    transform: scale(1); }
 }
 
+/* Agent badge: visible only when a known agent is the foreground command. */
+.tab-agent {
+  flex-shrink: 0;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--fg-dim);
+}
+
+.tab-agent[data-agent="claude"]   { color: #c678dd; background: rgba(198, 120, 221, 0.1); }
+.tab-agent[data-agent="codex"]    { color: #98c379; background: rgba(152, 195, 121, 0.1); }
+.tab-agent[data-agent="cursor"]   { color: #61afef; background: rgba(97, 175, 239, 0.1); }
+.tab-agent[data-agent="aider"]    { color: #56b6c2; background: rgba(86, 182, 194, 0.1); }
+.tab-agent[data-agent="gemini"]   { color: #e5c07b; background: rgba(229, 192, 123, 0.12); }
+.tab-agent[data-agent="opencode"] { color: #e06c75; background: rgba(224, 108, 117, 0.1); }
+
 .tab-close {
   flex-shrink: 0;
   width: 16px;
