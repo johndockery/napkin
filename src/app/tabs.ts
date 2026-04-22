@@ -5,6 +5,7 @@ export interface TabEventHandlers {
   readonly onClose: () => void;
   readonly onRenameRequested: () => void;
   readonly onReorder: (draggedId: string, beforeId: string | null) => void;
+  readonly onContextMenu: (anchor: HTMLElement) => void;
 }
 
 export interface TabElements {
@@ -82,6 +83,12 @@ export function bindTabEvents(tab: Tab, handlers: TabEventHandlers): void {
   tab.labelElement.addEventListener("dblclick", (event) => {
     event.stopPropagation();
     handlers.onRenameRequested();
+  });
+
+  tab.element.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    handlers.onContextMenu(tab.element);
   });
 
   tab.element.draggable = true;

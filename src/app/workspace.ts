@@ -13,6 +13,7 @@ import {
 } from "./ipc.ts";
 import { createNotificationGate } from "./notifications.ts";
 import { createCommandPalette, type CommandEntry } from "./commands.ts";
+import { applyTabColor, openTabColorMenu } from "./tab-colors.ts";
 import { createHelpOverlay } from "./help.ts";
 import { createPanePalette, type PalettePaneEntry } from "./palette.ts";
 import { createSearchController } from "./search.ts";
@@ -393,6 +394,7 @@ export async function bootWorkspace(
       activeLeaf: null,
       broadcastInput: false,
       customName: null,
+      color: null,
     };
 
     const root = createLeafPane(tab, {
@@ -417,6 +419,14 @@ export async function bootWorkspace(
         startTabRename(tab, () => updateTabLabel(tab));
       },
       onReorder: (draggedId, beforeId) => reorderTab(draggedId, beforeId),
+      onContextMenu: (anchor) => {
+        openTabColorMenu(document, anchor, {
+          onSelect: (key) => {
+            tab.color = key;
+            applyTabColor(tab, key);
+          },
+        });
+      },
     });
 
     mountTab(tab, elements.tabStrip, elements.newTabButton);

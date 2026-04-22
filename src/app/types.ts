@@ -70,6 +70,8 @@ export interface Tab {
   activeLeaf: LeafPane | null;
   broadcastInput: boolean;
   customName: string | null;
+  /** Tint key (one of TAB_COLOR_KEYS) or null for the default styling. */
+  color: string | null;
 }
 
 export interface AppElements {
