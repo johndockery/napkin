@@ -2,6 +2,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { ImageAddon } from "@xterm/addon-image";
 import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 
 import { registerClipboardHandler } from "./clipboard.ts";
@@ -122,6 +123,24 @@ export async function mountLeafPane(
   // xterm needs a mounted host with real dimensions before open() or it can
   // initialize against a 1x1 box and stay stuck there.
   leaf.terminal.open(leaf.terminalHostElement);
+
+  // WebGL renderer is a massive perf win for heavy output (agents
+  // streaming, build logs). It has to be loaded after open() because it
+  // needs the attached canvas. If the GPU context is lost later —
+  // sleep/wake, GPU driver reset, tab-in-bg — xterm falls back to the
+  // DOM renderer automatically once we dispose the addon, so handle
+  // contextloss instead of letting it crash rendering.
+  try {
+    const webgl = new WebglAddon();
+    webgl.onContextLoss(() => webgl.dispose());
+    leaf.terminal.loadAddon(webgl);
+    leaf.cleanup.push(() => webgl.dispose());
+  } catch (error) {
+    // WebGL unavailable (rare on modern macOS/Linux Webview). The DOM
+    // renderer still works; just log and move on.
+    options.reportInvokeError("webgl renderer unavailable", error);
+  }
+
   attachLinkProviders(leaf, options.reportInvokeError);
   registerClipboardHandler(leaf.terminal);
 

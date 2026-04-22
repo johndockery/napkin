@@ -133,7 +133,11 @@ function defaultTerminalOptions(): ITerminalOptions {
     cursorStyle: "bar",
     cursorWidth: 2,
     scrollback: 10_000,
-    smoothScrollDuration: 80,
+    // smoothScrollDuration applies to wheel events too. With trackpads
+    // firing wheel events every ~16ms, an 80ms animation queues up faster
+    // than it can play and feels laggy — especially under heavy agent
+    // output. 0 disables the animation; native scrolling feels snappier.
+    smoothScrollDuration: 0,
     allowTransparency: true,
     theme: { ...DEFAULT_THEME },
   };
@@ -166,7 +170,7 @@ export function applyConfig(raw: unknown): ResolvedConfig {
     cursorStyle: terminal.cursorStyle,
     cursorWidth: 2,
     scrollback: terminal.scrollback,
-    smoothScrollDuration: 80,
+    smoothScrollDuration: 0,
     allowTransparency: true,
     theme: terminal.theme,
   };
