@@ -26,9 +26,12 @@ const termTheme = {
   brightCyan: "#56b6c2", brightWhite: "#ffffff",
 };
 
+// ---------- Types ----------
+
 interface Leaf {
   type: "leaf";
   parent: Split | null;
+  tab: Tab;
   el: HTMLDivElement;
   termHost: HTMLDivElement;
   sessionId: string | null;
@@ -37,6 +40,7 @@ interface Leaf {
   resizeObs: ResizeObserver | null;
   disposers: Array<() => void>;
   mounted: boolean;
+  cwd: string;
 }
 
 interface Split {
@@ -54,26 +58,124 @@ interface Split {
 
 type Pane = Leaf | Split;
 
+interface Tab {
+  id: string;
+  el: HTMLDivElement;
+  labelEl: HTMLSpanElement;
+  closeBtn: HTMLButtonElement;
+  root: Pane;
+  activeLeaf: Leaf | null;
+}
+
+// ---------- State ----------
+
 const leavesBySessionId = new Map<string, Leaf>();
-const allLeaves = new Set<Leaf>();
-let activeLeaf: Leaf | null = null;
-let root: Pane | null = null;
+const tabs: Tab[] = [];
+let activeTab: Tab | null = null;
+let tabSeq = 0;
+
 const container = document.getElementById("term")!;
-const cwdEl = document.getElementById("chrome-cwd");
+const tabStrip = document.getElementById("tab-strip")!;
+const newTabBtn = document.getElementById("new-tab") as HTMLButtonElement;
 
-// ---------- Chrome ----------
+// ---------- Tab lifecycle ----------
 
-function setCwd(path: string) {
-  if (!cwdEl) return;
-  const display = path
+function makeTab(): Tab {
+  const id = `t${++tabSeq}`;
+  const el = document.createElement("div");
+  el.className = "tab";
+  el.dataset.id = id;
+
+  const labelEl = document.createElement("span");
+  labelEl.className = "tab-label";
+  labelEl.textContent = "~";
+  el.appendChild(labelEl);
+
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "tab-close";
+  closeBtn.textContent = "×";
+  closeBtn.title = "Close tab";
+  closeBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeTab(tab);
+  });
+  el.appendChild(closeBtn);
+
+  const tab: Tab = {
+    id, el, labelEl, closeBtn,
+    root: null as unknown as Pane, // set below
+    activeLeaf: null,
+  };
+
+  const leaf = makeLeaf(tab);
+  tab.root = leaf;
+
+  el.addEventListener("mousedown", () => activateTab(tab));
+
+  tabStrip.insertBefore(el, newTabBtn);
+  tabs.push(tab);
+  return tab;
+}
+
+async function openNewTab() {
+  const tab = makeTab();
+  activateTab(tab);
+  if (tab.root.type === "leaf") {
+    await mountLeaf(tab.root);
+    focusLeaf(tab.root);
+  }
+}
+
+function activateTab(tab: Tab) {
+  if (activeTab === tab) return;
+  // detach current
+  if (activeTab) {
+    activeTab.el.classList.remove("active");
+    if (activeTab.root.el.parentElement === container) {
+      container.removeChild(activeTab.root.el);
+    }
+  }
+  // attach new
+  container.appendChild(tab.root.el);
+  tab.el.classList.add("active");
+  activeTab = tab;
+  // refit + refocus
+  forEachLeaf(tab.root, (l) => { try { l.fit.fit(); } catch {} });
+  const leafToFocus = tab.activeLeaf ?? firstLeaf(tab.root);
+  if (leafToFocus) focusLeaf(leafToFocus);
+}
+
+async function closeTab(tab: Tab) {
+  // dispose all leaves in this tab
+  forEachLeaf(tab.root, disposeLeaf);
+  const idx = tabs.indexOf(tab);
+  if (idx >= 0) tabs.splice(idx, 1);
+  tab.el.remove();
+  if (tabs.length === 0) {
+    try { await getCurrentWindow().close(); } catch {}
+    return;
+  }
+  if (activeTab === tab) {
+    activeTab = null;
+    const neighbor = tabs[Math.max(0, Math.min(idx, tabs.length - 1))];
+    activateTab(neighbor);
+  }
+}
+
+function updateTabLabel(tab: Tab) {
+  const leaf = tab.activeLeaf ?? firstLeaf(tab.root);
+  const cwd = leaf?.cwd ?? "~";
+  const short = cwd
     .replace(/^\/Users\/[^/]+/, "~")
     .replace(/^\/home\/[^/]+/, "~");
-  cwdEl.textContent = display || "~";
+  const base = short.split("/").filter(Boolean).pop() ?? "~";
+  tab.labelEl.textContent = short === "~" ? "~" : base;
+  tab.labelEl.title = short;
 }
 
 // ---------- Leaf ----------
 
-function makeLeaf(): Leaf {
+function makeLeaf(tab: Tab): Leaf {
   const el = document.createElement("div");
   el.className = "pane leaf";
 
@@ -96,11 +198,14 @@ function makeLeaf(): Leaf {
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.loadAddon(new WebLinksAddon());
-  term.open(termHost);
+  // term.open() is deferred to mountLeaf(); xterm's renderer needs the host
+  // to be in the DOM with real dimensions or it initializes to 1x1 and never
+  // recovers even after resize.
 
   const leaf: Leaf = {
     type: "leaf",
     parent: null,
+    tab,
     el,
     termHost,
     sessionId: null,
@@ -109,17 +214,17 @@ function makeLeaf(): Leaf {
     resizeObs: null,
     disposers: [],
     mounted: false,
+    cwd: "~",
   };
 
   el.addEventListener("mousedown", () => focusLeaf(leaf), true);
 
   term.onTitleChange((title) => {
-    if (activeLeaf !== leaf) return;
     const m = title.match(/:\s*(.+)$/);
-    setCwd(m ? m[1] : title);
+    leaf.cwd = m ? m[1] : title;
+    if (leaf.tab.activeLeaf === leaf) updateTabLabel(leaf.tab);
   });
 
-  allLeaves.add(leaf);
   return leaf;
 }
 
@@ -127,13 +232,14 @@ async function mountLeaf(leaf: Leaf) {
   if (leaf.mounted) return;
   leaf.mounted = true;
 
-  // ResizeObserver keeps xterm cell grid in sync with the host
+  // Element must already be in the DOM at this point — open renderer now.
+  leaf.term.open(leaf.termHost);
+
   leaf.resizeObs = new ResizeObserver(() => {
     try { leaf.fit.fit(); } catch {}
   });
   leaf.resizeObs.observe(leaf.termHost);
 
-  // Wait one frame so the host has a real size
   await new Promise(requestAnimationFrame);
   try { leaf.fit.fit(); } catch {}
 
@@ -168,7 +274,6 @@ function disposeLeaf(leaf: Leaf) {
     leavesBySessionId.delete(leaf.sessionId);
   }
   leaf.term.dispose();
-  allLeaves.delete(leaf);
 }
 
 // ---------- Split ----------
@@ -243,14 +348,16 @@ function attachResizerDrag(s: Split) {
   });
 }
 
-// ---------- Tree operations ----------
+// ---------- Tree ops (per-tab) ----------
 
-function replaceInTree(oldPane: Pane, newPane: Pane) {
+function replaceInTree(tab: Tab, oldPane: Pane, newPane: Pane) {
   const parent = oldPane.parent;
   newPane.parent = parent;
   if (!parent) {
-    root = newPane;
-    container.replaceChild(newPane.el, oldPane.el);
+    tab.root = newPane;
+    if (oldPane.el.parentElement === container) {
+      container.replaceChild(newPane.el, oldPane.el);
+    }
     return;
   }
   const wrapper = parent.a === oldPane ? parent.aEl : parent.bEl;
@@ -259,29 +366,31 @@ function replaceInTree(oldPane: Pane, newPane: Pane) {
   else parent.b = newPane;
 }
 
-function splitActive(dir: "h" | "v") {
-  if (!activeLeaf) return;
-  const old = activeLeaf;
-  const neu = makeLeaf();
+async function splitActive(dir: "h" | "v") {
+  if (!activeTab || !activeTab.activeLeaf) return;
+  const tab = activeTab;
+  const old = tab.activeLeaf!;
+  const neu = makeLeaf(tab);
   const split = makeSplit(dir, old, neu);
-  replaceInTree(old, split);
-  mountLeaf(neu);
+  replaceInTree(tab, old, split);
+  await mountLeaf(neu);
   focusLeaf(neu);
 }
 
-async function closePane(leaf: Leaf) {
+async function closeActivePane() {
+  if (!activeTab || !activeTab.activeLeaf) return;
+  const tab = activeTab;
+  const leaf = tab.activeLeaf!;
   const parent = leaf.parent;
   disposeLeaf(leaf);
 
   if (!parent) {
-    // Last pane — close the window
-    try { await getCurrentWindow().close(); } catch {}
+    // leaf is the root of the tab — close the whole tab
+    await closeTab(tab);
     return;
   }
-
   const sibling: Pane = parent.a === leaf ? parent.b : parent.a;
-  // The sibling takes the grandparent's slot (or becomes root)
-  replaceInTree(parent, sibling);
+  replaceInTree(tab, parent, sibling);
   const next = firstLeaf(sibling);
   if (next) focusLeaf(next);
 }
@@ -291,37 +400,57 @@ function firstLeaf(p: Pane): Leaf | null {
   return firstLeaf(p.a) || firstLeaf(p.b);
 }
 
+function forEachLeaf(p: Pane, fn: (l: Leaf) => void) {
+  if (p.type === "leaf") { fn(p); return; }
+  forEachLeaf(p.a, fn);
+  forEachLeaf(p.b, fn);
+}
+
 // ---------- Focus & navigation ----------
 
 function focusLeaf(leaf: Leaf) {
-  activeLeaf = leaf;
-  for (const l of allLeaves) {
-    l.el.classList.toggle("active", l === leaf);
-  }
+  const tab = leaf.tab;
+  activeTab = tab;
+  tab.activeLeaf = leaf;
+  forEachLeaf(tab.root, (l) => l.el.classList.toggle("active", l === leaf));
   leaf.term.focus();
+  updateTabLabel(tab);
 }
 
 function navigate(dir: "left" | "right" | "up" | "down") {
-  if (!activeLeaf) return;
-  const r = activeLeaf.el.getBoundingClientRect();
+  if (!activeTab?.activeLeaf) return;
+  const active = activeTab.activeLeaf;
+  const r = active.el.getBoundingClientRect();
   const cx = (r.left + r.right) / 2;
   const cy = (r.top + r.bottom) / 2;
 
   let best: Leaf | null = null;
   let bestDist = Infinity;
-  for (const l of allLeaves) {
-    if (l === activeLeaf) continue;
+  forEachLeaf(activeTab.root, (l) => {
+    if (l === active) return;
     const rr = l.el.getBoundingClientRect();
-    if (dir === "left" && rr.right > r.left - 1) continue;
-    if (dir === "right" && rr.left < r.right + 1) continue;
-    if (dir === "up" && rr.bottom > r.top - 1) continue;
-    if (dir === "down" && rr.top < r.bottom + 1) continue;
+    if (dir === "left"  && rr.right > r.left - 1) return;
+    if (dir === "right" && rr.left  < r.right + 1) return;
+    if (dir === "up"    && rr.bottom > r.top - 1) return;
+    if (dir === "down"  && rr.top    < r.bottom + 1) return;
     const lcx = (rr.left + rr.right) / 2;
     const lcy = (rr.top + rr.bottom) / 2;
     const dist = Math.hypot(lcx - cx, lcy - cy);
     if (dist < bestDist) { bestDist = dist; best = l; }
-  }
+  });
   if (best) focusLeaf(best);
+}
+
+function cycleTab(offset: number) {
+  if (tabs.length === 0 || !activeTab) return;
+  const i = tabs.indexOf(activeTab);
+  const next = tabs[(i + offset + tabs.length) % tabs.length];
+  activateTab(next);
+}
+
+function activateTabByIndex(idx: number) {
+  if (idx < 0 || idx >= tabs.length) return;
+  activateTab(tabs[idx]);
 }
 
 // ---------- Keyboard ----------
@@ -330,20 +459,25 @@ window.addEventListener("keydown", (e) => {
   if (!e.metaKey) return;
   const k = e.key.toLowerCase();
 
+  if (k === "t" && !e.shiftKey) { openNewTab(); e.preventDefault(); return; }
   if (k === "d" && !e.shiftKey) { splitActive("h"); e.preventDefault(); return; }
   if (k === "d" &&  e.shiftKey) { splitActive("v"); e.preventDefault(); return; }
-
-  if (k === "w") {
-    if (activeLeaf) closePane(activeLeaf);
-    e.preventDefault();
-    return;
-  }
+  if (k === "w" && !e.shiftKey) { closeActivePane(); e.preventDefault(); return; }
 
   if (e.shiftKey) {
     if (k === "arrowleft")  { navigate("left");  e.preventDefault(); return; }
     if (k === "arrowright") { navigate("right"); e.preventDefault(); return; }
     if (k === "arrowup")    { navigate("up");    e.preventDefault(); return; }
     if (k === "arrowdown")  { navigate("down");  e.preventDefault(); return; }
+    if (k === "[" || k === "{") { cycleTab(-1); e.preventDefault(); return; }
+    if (k === "]" || k === "}") { cycleTab(+1); e.preventDefault(); return; }
+  }
+
+  // Cmd+1..9
+  if (!e.shiftKey && /^[1-9]$/.test(k)) {
+    activateTabByIndex(parseInt(k, 10) - 1);
+    e.preventDefault();
+    return;
   }
 }, true);
 
@@ -360,22 +494,61 @@ async function boot() {
     const leaf = leavesBySessionId.get(ev.payload.session_id);
     if (!leaf) return;
     leaf.term.writeln("\r\n\x1b[90m[napkin] session exited\x1b[0m");
-    setTimeout(() => closePane(leaf), 400);
+    setTimeout(() => {
+      // if this is the active leaf in its tab and it's the only pane, close the tab
+      const parent = leaf.parent;
+      const tab = leaf.tab;
+      disposeLeaf(leaf);
+      if (!parent) {
+        closeTab(tab);
+        return;
+      }
+      const sibling: Pane = parent.a === leaf ? parent.b : parent.a;
+      replaceInTree(tab, parent, sibling);
+      const next = firstLeaf(sibling);
+      if (next && activeTab === tab) focusLeaf(next);
+    }, 400);
   });
 
-  const first = makeLeaf();
-  root = first;
-  container.appendChild(first.el);
-  await mountLeaf(first);
-  focusLeaf(first);
+  newTabBtn.addEventListener("click", () => openNewTab());
+
+  const t = makeTab();
+  activateTab(t);
+  if (t.root.type === "leaf") {
+    await mountLeaf(t.root);
+    focusLeaf(t.root);
+  }
 }
 
 window.addEventListener("resize", () => {
-  for (const l of allLeaves) {
-    try { l.fit.fit(); } catch {}
-  }
+  if (!activeTab) return;
+  forEachLeaf(activeTab.root, (l) => { try { l.fit.fit(); } catch {} });
 });
 
-boot().catch((e) => {
-  console.error("napkin boot failed:", e);
+// ---------- Visible error surface (since devtools is off) ----------
+
+function showError(msg: string) {
+  let box = document.getElementById("napkin-error-box");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "napkin-error-box";
+    box.style.cssText =
+      "position:fixed;top:48px;left:12px;right:12px;max-height:40vh;overflow:auto;" +
+      "background:#2a0f0f;color:#ff9999;padding:12px 14px;border:1px solid #552;" +
+      "border-radius:8px;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap;" +
+      "z-index:99999;user-select:text;";
+    document.body.appendChild(box);
+  }
+  box.textContent += (box.textContent ? "\n\n" : "") + msg;
+}
+
+window.addEventListener("error", (e) => {
+  showError(`[error] ${e.message}\n  at ${e.filename}:${e.lineno}:${e.colno}\n${e.error?.stack ?? ""}`);
+});
+window.addEventListener("unhandledrejection", (e: any) => {
+  showError(`[promise] ${e.reason?.stack ?? e.reason}`);
+});
+
+boot().catch((e: any) => {
+  showError(`[boot failed] ${e?.stack ?? e}`);
 });
