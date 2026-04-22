@@ -257,8 +257,8 @@ html, body {
   position: absolute;
   inset: -3px;
 }
-.split.h > .split-resizer { cursor: col-resize; }
-.split.v > .split-resizer { cursor: row-resize; }
+.split.horizontal > .split-resizer { cursor: col-resize; }
+.split.vertical > .split-resizer { cursor: row-resize; }
 .split-resizer:hover { background: rgba(245, 167, 66, 0.3); }
 
 /* xterm tweaks */
@@ -278,3 +278,63 @@ html, body {
   background: rgba(255, 255, 255, 0.16);
 }
 .xterm-selection-layer { opacity: 0.9; }
+
+/* Error toasts */
+
+.napkin-toast-region {
+  position: fixed;
+  top: 48px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(360px, calc(100vw - 24px));
+  z-index: 99999;
+  pointer-events: none;
+}
+
+.napkin-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(245, 167, 66, 0.25);
+  border-radius: 8px;
+  background: rgba(18, 19, 24, 0.96);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  color: var(--fg);
+  font: 12px/1.45 "JetBrains Mono", "SF Mono", Menlo, monospace;
+  pointer-events: auto;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.napkin-toast.is-dismissing {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.napkin-toast-message {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.napkin-toast-close {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-dim);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+  padding: 0;
+}
+
+.napkin-toast-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--fg);
+}

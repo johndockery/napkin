@@ -17,7 +17,11 @@ pub struct OscScanner {
 
 impl OscScanner {
     pub fn new() -> Self {
-        Self { buf: Vec::new(), in_osc: false, saw_esc: false }
+        Self {
+            buf: Vec::new(),
+            in_osc: false,
+            saw_esc: false,
+        }
     }
 
     pub fn feed(&mut self, data: &[u8]) -> Vec<OscEvent> {
@@ -34,12 +38,16 @@ impl OscScanner {
                     self.saw_esc = false;
                 }
             } else if b == 0x07 {
-                if let Some(ev) = parse_osc(&self.buf) { events.push(ev); }
+                if let Some(ev) = parse_osc(&self.buf) {
+                    events.push(ev);
+                }
                 self.buf.clear();
                 self.in_osc = false;
                 self.saw_esc = false;
             } else if self.saw_esc && b == b'\\' {
-                if let Some(ev) = parse_osc(&self.buf) { events.push(ev); }
+                if let Some(ev) = parse_osc(&self.buf) {
+                    events.push(ev);
+                }
                 self.buf.clear();
                 self.in_osc = false;
                 self.saw_esc = false;
@@ -70,7 +78,9 @@ fn parse_osc(payload: &[u8]) -> Option<OscEvent> {
             match parts.next()? {
                 "A" | "B" => Some(OscEvent::PromptStart),
                 "C" => Some(OscEvent::CommandStart),
-                "D" => Some(OscEvent::CommandEnd(parts.next().and_then(|s| s.parse().ok()))),
+                "D" => Some(OscEvent::CommandEnd(
+                    parts.next().and_then(|s| s.parse().ok()),
+                )),
                 _ => None,
             }
         }

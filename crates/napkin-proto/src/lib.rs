@@ -57,14 +57,28 @@ pub struct ServerMsg {
 pub enum ServerOp {
     Pong,
     Ok,
-    Err { error: String },
-    SpawnOk { session_id: String },
-    ListOk { sessions: Vec<SessionInfo> },
+    Err {
+        error: String,
+    },
+    SpawnOk {
+        session_id: String,
+    },
+    ListOk {
+        sessions: Vec<SessionInfo>,
+    },
 
     // Async events (no id)
-    Output { session_id: String, data: Vec<u8> },
-    Exit { session_id: String },
-    Cwd { session_id: String, cwd: String },
+    Output {
+        session_id: String,
+        data: Vec<u8>,
+    },
+    Exit {
+        session_id: String,
+    },
+    Cwd {
+        session_id: String,
+        cwd: String,
+    },
     Mark {
         session_id: String,
         mark: String,

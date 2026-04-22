@@ -9,7 +9,7 @@ mod shim;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 
 use napkin_proto::{socket_path, ClientMsg, ClientOp, ServerMsg, ServerOp, SessionInfo};
@@ -56,15 +56,22 @@ fn handle_client(stream: UnixStream, sessions: SessionMap) {
     let (tx, rx) = std::sync::mpsc::channel::<ServerMsg>();
     let read_stream = match stream.try_clone() {
         Ok(s) => s,
-        Err(e) => { eprintln!("napkind: clone stream failed: {e}"); return; }
+        Err(e) => {
+            eprintln!("napkind: clone stream failed: {e}");
+            return;
+        }
     };
 
     // Writer thread: drains rx and writes to socket
     let mut write_stream = stream;
     let writer_thread = thread::spawn(move || {
         while let Ok(msg) = rx.recv() {
-            let Ok(line) = serde_json::to_string(&msg) else { continue; };
-            if writeln!(write_stream, "{}", line).is_err() { break; }
+            let Ok(line) = serde_json::to_string(&msg) else {
+                continue;
+            };
+            if writeln!(write_stream, "{}", line).is_err() {
+                break;
+            }
         }
     });
 
@@ -78,7 +85,9 @@ fn handle_client(stream: UnixStream, sessions: SessionMap) {
                 Err(e) => {
                     let _ = tx.send(ServerMsg {
                         id: None,
-                        op: ServerOp::Err { error: format!("parse: {e}") },
+                        op: ServerOp::Err {
+                            error: format!("parse: {e}"),
+                        },
                     });
                 }
             },
@@ -99,56 +108,84 @@ fn dispatch(msg: ClientMsg, sessions: &SessionMap, tx: &std::sync::mpsc::Sender<
     match msg.op {
         ClientOp::Ping => reply(ServerOp::Pong),
 
-        ClientOp::Spawn { rows, cols, cwd, shell } => {
-            match spawn_session(rows, cols, cwd, shell, tx.clone()) {
-                Ok((sid, session)) => {
-                    sessions.lock().unwrap().insert(sid.clone(), session);
-                    reply(ServerOp::SpawnOk { session_id: sid });
-                }
-                Err(e) => reply(ServerOp::Err { error: e }),
+        ClientOp::Spawn {
+            rows,
+            cols,
+            cwd,
+            shell,
+        } => match spawn_session(rows, cols, cwd, shell, tx.clone()) {
+            Ok((sid, session)) => {
+                lock_or_recover(sessions).insert(sid.clone(), session);
+                reply(ServerOp::SpawnOk { session_id: sid });
             }
-        }
+            Err(e) => reply(ServerOp::Err { error: e }),
+        },
 
         ClientOp::Write { session_id, data } => {
-            let Some(session) = sessions.lock().unwrap().get(&session_id).cloned() else {
-                reply(ServerOp::Err { error: "no such session".into() });
+            let Some(session) = lock_or_recover(sessions).get(&session_id).cloned() else {
+                reply(ServerOp::Err {
+                    error: "no such session".into(),
+                });
                 return;
             };
-            let mut s = session.lock().unwrap();
+            let mut s = lock_or_recover(&session);
             match s.writer.write_all(&data) {
-                Ok(()) => { s.writer.flush().ok(); reply(ServerOp::Ok); }
-                Err(e) => reply(ServerOp::Err { error: e.to_string() }),
+                Ok(()) => {
+                    s.writer.flush().ok();
+                    reply(ServerOp::Ok);
+                }
+                Err(e) => reply(ServerOp::Err {
+                    error: e.to_string(),
+                }),
             }
         }
 
-        ClientOp::Resize { session_id, rows, cols } => {
-            let Some(session) = sessions.lock().unwrap().get(&session_id).cloned() else {
-                reply(ServerOp::Err { error: "no such session".into() });
+        ClientOp::Resize {
+            session_id,
+            rows,
+            cols,
+        } => {
+            let Some(session) = lock_or_recover(sessions).get(&session_id).cloned() else {
+                reply(ServerOp::Err {
+                    error: "no such session".into(),
+                });
                 return;
             };
-            let s = session.lock().unwrap();
-            match s.master.resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 }) {
+            let s = lock_or_recover(&session);
+            match s.master.resize(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            }) {
                 Ok(()) => reply(ServerOp::Ok),
-                Err(e) => reply(ServerOp::Err { error: e.to_string() }),
+                Err(e) => reply(ServerOp::Err {
+                    error: e.to_string(),
+                }),
             }
         }
 
         ClientOp::Kill { session_id } => {
-            sessions.lock().unwrap().remove(&session_id);
+            lock_or_recover(sessions).remove(&session_id);
             reply(ServerOp::Ok);
         }
 
         ClientOp::List => {
-            let infos: Vec<SessionInfo> = sessions
-                .lock()
-                .unwrap()
+            let infos: Vec<SessionInfo> = lock_or_recover(sessions)
                 .iter()
                 .map(|(id, s)| SessionInfo {
                     session_id: id.clone(),
-                    cwd: s.lock().unwrap().cwd.clone(),
+                    cwd: lock_or_recover(s).cwd.clone(),
                 })
                 .collect();
             reply(ServerOp::ListOk { sessions: infos });
         }
     }
+}
+
+fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    // One panicked worker should not poison the daemon's shared session state.
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
