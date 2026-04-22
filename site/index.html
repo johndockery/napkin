@@ -1051,7 +1051,7 @@
   }
   .foot-grid {
     display: grid;
-    grid-template-columns: 2fr 1fr 1fr 1fr;
+    grid-template-columns: 2fr 1fr;
     gap: 40px;
   }
   .foot-brand { display: flex; flex-direction: column; gap: 14px; max-width: 340px; }
@@ -1401,13 +1401,13 @@
     <div class="quickstart">
       <div class="qs-card">
         <h4>macOS <span class="os">homebrew</span></h4>
-        <p class="qs-sub">The fast path once the tap is live. Installs the app bundle and puts <code style="font-family:var(--mono);font-size:12px;background:var(--cream-2);padding:1px 5px;border-radius:3px">napkin</code> on your PATH.</p>
+        <p class="qs-sub">Installs the app bundle into <code style="font-family:var(--mono);font-size:12px;background:var(--cream-2);padding:1px 5px;border-radius:3px">/Applications</code> and symlinks the <code style="font-family:var(--mono);font-size:12px;background:var(--cream-2);padding:1px 5px;border-radius:3px">napkin</code> CLI onto your PATH.</p>
         <div class="qs-code">
           <pre><span class="cmt"># installs napkin + napkind</span>
-<span class="pr">$</span> brew install <span class="str">napkin-term/napkin/napkin</span>
+<span class="pr">$</span> brew install --cask <span class="str">napkin-term/napkin/napkin</span>
 <span class="pr">$</span> napkin <span class="flag">--version</span>
   napkin 0.1.0</pre>
-          <button class="copy-btn" data-copy="brew install napkin-term/napkin/napkin">Copy</button>
+          <button class="copy-btn" data-copy="brew install --cask napkin-term/napkin/napkin">Copy</button>
         </div>
         <div class="qs-meta">
           <span>macOS 12+ · Apple Silicon &amp; Intel</span>
@@ -1444,10 +1444,6 @@
         <a href="https://github.com/johndockery/napkin" target="_blank" rel="noopener">GitHub</a>
         <a href="https://github.com/johndockery/napkin/issues" target="_blank" rel="noopener">Issues</a>
         <a href="https://github.com/johndockery/napkin/discussions" target="_blank" rel="noopener">Discussions</a>
-      </div>
-      <div class="foot-col">
-        <h6>Contact</h6>
-        <a href="mailto:hi@napkin.world">hi@napkin.world</a>
       </div>
     </div>
     <div class="foot-bottom">

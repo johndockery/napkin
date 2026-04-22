@@ -26,3 +26,13 @@
   for = "/napkin.png"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
+
+# The install script served at napkin.world/install. curl | sh doesn't
+# care about Content-Type, but browsers that land on the URL do — set it
+# explicitly so the script shows up as text instead of a forced download.
+# Short cache so bumps to the installer ship on the next deploy.
+[[headers]]
+  for = "/install"
+  [headers.values]
+    Content-Type = "text/x-shellscript; charset=utf-8"
+    Cache-Control = "public, max-age=300, s-maxage=3600"
