@@ -99,6 +99,7 @@ export function createLeafPane(
     cwd: "~",
     runState: "idle",
     agent: null,
+    promptMarks: [],
   };
 
   element.addEventListener("mousedown", () => options.onFocusRequested(leaf), true);

@@ -38,9 +38,12 @@ const SECTIONS: readonly Section[] = [
     title: "Search & navigation",
     shortcuts: [
       { keys: "⌘P", description: "Pane palette" },
+      { keys: "⌘⇧P", description: "Command palette" },
+      { keys: "⌘J", description: "Jump to next waiting agent" },
       { keys: "⌘⇧A", description: "Agent palette" },
       { keys: "⌘F", description: "Search within pane" },
       { keys: "⌘G / ⌘⇧G", description: "Next / previous match" },
+      { keys: "⌘↑ / ⌘↓", description: "Jump between prompts in the pane" },
     ],
   },
   {

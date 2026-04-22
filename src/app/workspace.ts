@@ -222,6 +222,27 @@ export async function bootWorkspace(
         run: () => palette.toggle("agents"),
       },
       {
+        id: "jump-waiting-agent",
+        category: "Navigate",
+        title: "Jump to next waiting agent",
+        shortcut: "⌘J",
+        run: () => jumpToWaitingAgent(),
+      },
+      {
+        id: "jump-prompt-up",
+        category: "Navigate",
+        title: "Jump to previous prompt",
+        shortcut: "⌘↑",
+        run: () => jumpToPrompt("previous"),
+      },
+      {
+        id: "jump-prompt-down",
+        category: "Navigate",
+        title: "Jump to next prompt",
+        shortcut: "⌘↓",
+        run: () => jumpToPrompt("next"),
+      },
+      {
         id: "search-pane",
         category: "Navigate",
         title: "Search within pane",
@@ -588,6 +609,74 @@ export async function bootWorkspace(
     state.activeTab?.activeLeaf?.terminal.clear();
   };
 
+  const jumpToPrompt = (direction: "previous" | "next"): void => {
+    const leaf = state.activeTab?.activeLeaf;
+    if (!leaf || leaf.promptMarks.length === 0) {
+      return;
+    }
+    const buffer = leaf.terminal.buffer.active;
+    // Scroll position is the absolute line of the first row in the viewport.
+    const current = buffer.viewportY;
+    let target: number | undefined;
+    if (direction === "previous") {
+      for (let i = leaf.promptMarks.length - 1; i >= 0; i -= 1) {
+        if (leaf.promptMarks[i] < current) {
+          target = leaf.promptMarks[i];
+          break;
+        }
+      }
+    } else {
+      for (const mark of leaf.promptMarks) {
+        if (mark > current) {
+          target = mark;
+          break;
+        }
+      }
+    }
+    if (target === undefined) {
+      return;
+    }
+    // xterm's scrollToLine is absolute and scrolls the target line to the top.
+    leaf.terminal.scrollToLine(target);
+  };
+
+  // Cycle through panes whose agents are currently waiting for input. Walks
+  // tabs in order, leaves within each tab in tree order, wraps around. The
+  // pane we last jumped to is skipped on the next press so repeated presses
+  // walk the fleet.
+  let lastWaitingJumpTarget: LeafPane | null = null;
+
+  const jumpToWaitingAgent = (): void => {
+    const candidates: LeafPane[] = [];
+    for (const tab of state.tabs) {
+      forEachLeaf(getTabRoot(tab), (leaf) => {
+        if (leaf.runState === "waiting") {
+          candidates.push(leaf);
+        }
+      });
+    }
+    if (candidates.length === 0) {
+      return;
+    }
+    let target: LeafPane | undefined;
+    if (lastWaitingJumpTarget) {
+      const lastIndex = candidates.indexOf(lastWaitingJumpTarget);
+      if (lastIndex >= 0) {
+        target = candidates[(lastIndex + 1) % candidates.length];
+      }
+    }
+    if (!target) {
+      target = candidates[0];
+    }
+    lastWaitingJumpTarget = target;
+    const tab = target.tab;
+    if (state.activeTab !== tab) {
+      activateTab(tab, { focusTerminal: false });
+    }
+    tab.activeLeaf = target;
+    focusLeaf(target);
+  };
+
   const applyFontSize = (): void => {
     saveFontSize(window.localStorage, state.fontSize);
     for (const leaf of listLeaves()) {
@@ -628,9 +717,23 @@ export async function bootWorkspace(
 
     switch (mark) {
       case "A":
-      case "B":
+      case "B": {
         setLeafRunState(leaf, "idle");
+        // Record the line number where this prompt starts so Cmd+↑ / Cmd+↓
+        // can seek between prompts later. Line is 0-indexed absolute buffer
+        // coordinate; xterm's buffer.active.cursorY + baseY maps to it.
+        const buffer = leaf.terminal.buffer.active;
+        const line = buffer.baseY + buffer.cursorY;
+        const last = leaf.promptMarks[leaf.promptMarks.length - 1];
+        if (last !== line) {
+          leaf.promptMarks.push(line);
+          // Keep the mark list from growing unbounded on noisy sessions.
+          if (leaf.promptMarks.length > 4096) {
+            leaf.promptMarks.splice(0, leaf.promptMarks.length - 4096);
+          }
+        }
         break;
+      }
       case "C":
         setLeafRunState(leaf, "running");
         break;
@@ -805,6 +908,8 @@ export async function bootWorkspace(
     findPreviousInPane: () => search.findPrevious(),
     toggleHelp: () => help.toggle(),
     toggleCommandPalette: () => commandPalette.toggle(),
+    jumpToWaitingAgent,
+    jumpToPrompt,
   });
 
   window.addEventListener("resize", () => {

@@ -36,6 +36,12 @@ export interface LeafPane {
   runState: PaneRunState;
   /** Foreground agent name (e.g. "claude", "codex") or null when none. */
   agent: string | null;
+  /**
+   * Absolute buffer-line numbers of prompt starts (OSC 133 A) in the
+   * xterm scrollback, newest last. Used to jump between commands like
+   * chapters via Cmd+↑ / Cmd+↓.
+   */
+  readonly promptMarks: number[];
 }
 
 export interface SplitPane {

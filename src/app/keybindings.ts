@@ -18,6 +18,8 @@ export interface KeybindingHandlers {
   readonly findPreviousInPane: () => void;
   readonly toggleHelp: () => void;
   readonly toggleCommandPalette: () => void;
+  readonly jumpToWaitingAgent: () => void;
+  readonly jumpToPrompt: (direction: "previous" | "next") => void;
 }
 
 export function registerKeybindings(
@@ -93,6 +95,21 @@ export function registerKeybindings(
     }
     if (key === "/") {
       handlers.toggleHelp();
+      event.preventDefault();
+      return;
+    }
+    if (key === "j" && !event.shiftKey) {
+      handlers.jumpToWaitingAgent();
+      event.preventDefault();
+      return;
+    }
+    if (!event.shiftKey && key === "arrowup") {
+      handlers.jumpToPrompt("previous");
+      event.preventDefault();
+      return;
+    }
+    if (!event.shiftKey && key === "arrowdown") {
+      handlers.jumpToPrompt("next");
       event.preventDefault();
       return;
     }
