@@ -8,7 +8,9 @@ mod events;
 use tauri::Manager;
 
 use crate::client::{start_client, Client};
-use crate::commands::{pty_kill, pty_list, pty_resize, pty_spawn, pty_subscribe, pty_write};
+use crate::commands::{
+    open_in_editor, pty_kill, pty_list, pty_resize, pty_spawn, pty_subscribe, pty_write,
+};
 use crate::config::load_config;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -38,6 +40,7 @@ pub fn run() {
             pty_list,
             pty_subscribe,
             load_config,
+            open_in_editor,
         ])
         .run(tauri::generate_context!())
         .expect("error while running napkin");

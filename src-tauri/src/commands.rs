@@ -94,6 +94,66 @@ pub(crate) fn pty_list(client: State<'_, Client>) -> Result<Vec<PtySession>, Str
     }
 }
 
+/// Open a file path (optionally with line/column) in the user's editor.
+/// Honours $EDITOR via `-g` syntax when it looks like vscode/cursor; falls
+/// back to `open` on macOS otherwise.
+#[tauri::command]
+pub(crate) fn open_in_editor(
+    path: String,
+    #[allow(non_snake_case)] line: Option<u32>,
+    #[allow(non_snake_case)] column: Option<u32>,
+) -> Result<(), String> {
+    use std::process::Command;
+
+    let editor = std::env::var("EDITOR").unwrap_or_default();
+    let editor_bin = editor
+        .split_whitespace()
+        .next()
+        .map(|s| s.rsplit('/').next().unwrap_or(s).to_string())
+        .unwrap_or_default();
+
+    // Build the target path with line:col suffix if we have one.
+    let target = match (line, column) {
+        (Some(l), Some(c)) => format!("{path}:{l}:{c}"),
+        (Some(l), None) => format!("{path}:{l}"),
+        _ => path.clone(),
+    };
+
+    let spawn = |cmd: &mut Command| {
+        cmd.stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    };
+
+    match editor_bin.as_str() {
+        "code" | "code-insiders" | "cursor" | "windsurf" => {
+            let mut c = Command::new(&editor_bin);
+            c.arg("-g").arg(&target);
+            spawn(&mut c)
+        }
+        "" => {
+            // No $EDITOR configured; fall back to macOS `open`, which routes
+            // to the user's default editor association.
+            let mut c = Command::new("open");
+            c.arg(&path);
+            spawn(&mut c)
+        }
+        _ => {
+            // Generic $EDITOR invocation. Some editors support +line;
+            // include it only when we have a line.
+            let mut c = Command::new(&editor_bin);
+            if let Some(l) = line {
+                c.arg(format!("+{l}"));
+            }
+            c.arg(&path);
+            spawn(&mut c)
+        }
+    }
+}
+
 /// Re-attach the UI to an existing daemon session and resize it to the
 /// caller's window dimensions.
 #[tauri::command]

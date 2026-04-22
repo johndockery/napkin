@@ -81,6 +81,14 @@ export async function loadConfig(): Promise<unknown> {
   return invoke<unknown>("load_config");
 }
 
+export async function openInEditor(
+  path: string,
+  line: number | null,
+  column: number | null,
+): Promise<void> {
+  await invoke("open_in_editor", { path, line, column });
+}
+
 interface RawPtySessionSummary {
   readonly session_id: string;
   readonly cwd: string;

@@ -4,6 +4,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 
 import { killPty, resizePty, spawnPty, subscribePty, writePty } from "./ipc.ts";
+import { registerFilePathLinks } from "./links.ts";
 import {
   TERMINAL_FONT_FAMILY,
   TERMINAL_THEME,
@@ -31,6 +32,13 @@ export interface LeafIoOptions {
   readonly reportInvokeError: (context: string, error: unknown) => void;
   /** When set, attach to this existing daemon session instead of spawning. */
   readonly existingSessionId?: string;
+}
+
+export function attachLinkProviders(
+  leaf: LeafPane,
+  reportError: (context: string, error: unknown) => void,
+): void {
+  registerFilePathLinks(leaf.terminal, reportError);
 }
 
 export function createLeafPane(
@@ -107,6 +115,7 @@ export async function mountLeafPane(
   // xterm needs a mounted host with real dimensions before open() or it can
   // initialize against a 1x1 box and stay stuck there.
   leaf.terminal.open(leaf.terminalHostElement);
+  attachLinkProviders(leaf, options.reportInvokeError);
 
   leaf.resizeObserver = new ResizeObserver(() => {
     fitLeafPane(leaf);
