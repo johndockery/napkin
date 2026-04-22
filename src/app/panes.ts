@@ -4,6 +4,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 
+import { registerClipboardHandler } from "./clipboard.ts";
 import { killPty, resizePty, spawnPty, subscribePty, writePty } from "./ipc.ts";
 import { registerFilePathLinks } from "./links.ts";
 import {
@@ -126,6 +127,7 @@ export async function mountLeafPane(
   // initialize against a 1x1 box and stay stuck there.
   leaf.terminal.open(leaf.terminalHostElement);
   attachLinkProviders(leaf, options.reportInvokeError);
+  registerClipboardHandler(leaf.terminal);
 
   leaf.resizeObserver = new ResizeObserver(() => {
     fitLeafPane(leaf);
