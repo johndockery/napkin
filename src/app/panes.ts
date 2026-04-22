@@ -102,6 +102,7 @@ export function createLeafPane(
     agentTokens: null,
     agentCostUsd: null,
     agentRunningSince: null,
+    writeLocked: false,
     promptMarks: [],
     bookmarks: [],
   };
@@ -167,7 +168,7 @@ export async function mountLeafPane(
   const dataDisposable = leaf.terminal.onData((data) => {
     const payload = Array.from(inputEncoder.encode(data));
     const targets = leaf.tab.broadcastInput
-      ? options.getBroadcastTargets(leaf)
+      ? options.getBroadcastTargets(leaf).filter((t) => !t.writeLocked || t === leaf)
       : [leaf];
 
     for (const target of targets) {

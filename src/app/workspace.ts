@@ -294,6 +294,15 @@ export async function bootWorkspace(
         shortcut: "⌘⇧M",
         run: () => addBookmark(),
       },
+      {
+        id: "toggle-write-lock",
+        category: "Panes",
+        title: state.activeTab?.activeLeaf?.writeLocked
+          ? "Unlock write protection on this pane"
+          : "Write-lock this pane (block broadcast input)",
+        shortcut: "⌘⇧L",
+        run: () => toggleWriteLock(),
+      },
       // Bookmarks for the active leaf are injected dynamically at the end
       // so they land in the palette under a "Bookmarks" section and route
       // straight to a jump.
@@ -644,6 +653,13 @@ export async function bootWorkspace(
     state.activeTab?.activeLeaf?.terminal.clear();
   };
 
+  const toggleWriteLock = (): void => {
+    const leaf = state.activeTab?.activeLeaf;
+    if (!leaf) return;
+    leaf.writeLocked = !leaf.writeLocked;
+    leaf.element.classList.toggle("write-locked", leaf.writeLocked);
+  };
+
   const addBookmark = (): void => {
     const leaf = state.activeTab?.activeLeaf;
     if (!leaf) return;
@@ -986,6 +1002,7 @@ export async function bootWorkspace(
     jumpToWaitingAgent,
     jumpToPrompt,
     addBookmark,
+    toggleWriteLock,
   });
 
   window.addEventListener("resize", () => {

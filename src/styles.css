@@ -676,6 +676,24 @@ html, body {
   border-color: #61afef;
   box-shadow: 0 0 0 0.5px rgba(97, 175, 239, 0.3);
 }
+
+/* Write-locked panes are protected from broadcast fan-out. */
+.leaf.write-locked {
+  border-color: rgba(224, 108, 117, 0.45);
+}
+.leaf.write-locked.active {
+  border-color: rgba(224, 108, 117, 0.75);
+  box-shadow: 0 0 0 1px rgba(224, 108, 117, 0.45);
+}
+.leaf.write-locked::before {
+  content: "🔒";
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 10px;
+  color: rgba(224, 108, 117, 0.8);
+  pointer-events: none;
+}
 .leaf.broadcasting.active {
   border-color: #61afef;
   box-shadow: 0 0 0 1px rgba(97, 175, 239, 0.5);

@@ -22,6 +22,7 @@ export interface KeybindingHandlers {
   readonly jumpToWaitingAgent: () => void;
   readonly jumpToPrompt: (direction: "previous" | "next") => void;
   readonly addBookmark: () => void;
+  readonly toggleWriteLock: () => void;
 }
 
 export function registerKeybindings(
@@ -122,6 +123,11 @@ export function registerKeybindings(
     }
     if (key === "m" && event.shiftKey) {
       handlers.addBookmark();
+      event.preventDefault();
+      return;
+    }
+    if (key === "l" && event.shiftKey) {
+      handlers.toggleWriteLock();
       event.preventDefault();
       return;
     }

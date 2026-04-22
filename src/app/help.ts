@@ -31,6 +31,7 @@ const SECTIONS: readonly Section[] = [
       { keys: "⌘⇧←↑→↓", description: "Focus neighbour pane" },
       { keys: "Drag divider", description: "Resize" },
       { keys: "⌘⇧B", description: "Toggle broadcast input" },
+      { keys: "⌘⇧L", description: "Write-lock pane (ignore broadcast)" },
       { keys: "⌘K", description: "Clear active pane" },
     ],
   },

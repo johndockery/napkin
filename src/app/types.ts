@@ -43,6 +43,11 @@ export interface LeafPane {
   /** Time (ms) when the current "running" span started, or null. */
   agentRunningSince: number | null;
   /**
+   * Write-locked panes are skipped by broadcast input. Use for prod SSH
+   * sessions or anything you don't want a broadcast `rm -rf` to reach.
+   */
+  writeLocked: boolean;
+  /**
    * Absolute buffer-line numbers of prompt starts (OSC 133 A) in the
    * xterm scrollback, newest last. Used to jump between commands like
    * chapters via Cmd+↑ / Cmd+↓.
