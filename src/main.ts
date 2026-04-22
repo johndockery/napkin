@@ -65,6 +65,8 @@ interface Tab {
   closeBtn: HTMLButtonElement;
   root: Pane;
   activeLeaf: Leaf | null;
+  broadcast: boolean;
+  customName: string | null;
 }
 
 // ---------- State ----------
@@ -105,16 +107,49 @@ function makeTab(): Tab {
     id, el, labelEl, closeBtn,
     root: null as unknown as Pane, // set below
     activeLeaf: null,
+    broadcast: false,
+    customName: null,
   };
 
   const leaf = makeLeaf(tab);
   tab.root = leaf;
 
-  el.addEventListener("mousedown", () => activateTab(tab));
+  el.addEventListener("mousedown", (e) => {
+    if ((e.target as HTMLElement).closest(".tab-close")) return;
+    activateTab(tab);
+  });
+
+  labelEl.addEventListener("dblclick", (e) => {
+    e.stopPropagation();
+    startRenameTab(tab);
+  });
 
   tabStrip.insertBefore(el, newTabBtn);
   tabs.push(tab);
   return tab;
+}
+
+function startRenameTab(tab: Tab) {
+  const original = tab.customName ?? tab.labelEl.textContent ?? "";
+  const input = document.createElement("input");
+  input.className = "tab-rename";
+  input.value = original;
+  input.spellcheck = false;
+  tab.labelEl.replaceWith(input);
+  input.focus();
+  input.select();
+
+  const commit = (save: boolean) => {
+    const v = input.value.trim();
+    if (save) tab.customName = v === "" ? null : v;
+    input.replaceWith(tab.labelEl);
+    updateTabLabel(tab);
+  };
+  input.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") { ev.preventDefault(); commit(true); }
+    else if (ev.key === "Escape") { ev.preventDefault(); commit(false); }
+  });
+  input.addEventListener("blur", () => commit(true));
 }
 
 async function openNewTab() {
@@ -163,6 +198,11 @@ async function closeTab(tab: Tab) {
 }
 
 function updateTabLabel(tab: Tab) {
+  if (tab.customName) {
+    tab.labelEl.textContent = tab.customName;
+    tab.labelEl.title = tab.customName;
+    return;
+  }
   const leaf = tab.activeLeaf ?? firstLeaf(tab.root);
   const cwd = leaf?.cwd ?? "~";
   const short = cwd
@@ -185,7 +225,7 @@ function makeLeaf(tab: Tab): Leaf {
 
   const term = new Terminal({
     fontFamily: '"JetBrains Mono", "SF Mono", Menlo, monospace',
-    fontSize: 14,
+    fontSize,
     lineHeight: 1.35,
     cursorBlink: true,
     cursorStyle: "bar",
@@ -254,10 +294,16 @@ async function mountLeaf(leaf: Leaf) {
 
   const d1 = leaf.term.onData((data) => {
     if (!leaf.sessionId) return;
-    invoke("pty_write", {
-      sessionId: leaf.sessionId,
-      data: Array.from(encoder.encode(data)),
-    });
+    const bytes = Array.from(encoder.encode(data));
+    // Broadcast mode: write to every leaf in the tab
+    if (leaf.tab.broadcast) {
+      forEachLeaf(leaf.tab.root, (l) => {
+        if (!l.sessionId) return;
+        invoke("pty_write", { sessionId: l.sessionId, data: bytes });
+      });
+    } else {
+      invoke("pty_write", { sessionId: leaf.sessionId, data: bytes });
+    }
   });
   const d2 = leaf.term.onResize(({ rows, cols }) => {
     if (!leaf.sessionId) return;
@@ -448,6 +494,44 @@ function cycleTab(offset: number) {
   activateTab(next);
 }
 
+function toggleBroadcast() {
+  if (!activeTab) return;
+  activeTab.broadcast = !activeTab.broadcast;
+  activeTab.el.classList.toggle("broadcasting", activeTab.broadcast);
+  forEachLeaf(activeTab.root, (l) =>
+    l.el.classList.toggle("broadcasting", activeTab!.broadcast),
+  );
+}
+
+function clearActive() {
+  if (activeTab?.activeLeaf) {
+    activeTab.activeLeaf.term.clear();
+  }
+}
+
+// Font size zoom, persisted
+const FONT_KEY = "napkin:fontSize";
+let fontSize = parseInt(localStorage.getItem(FONT_KEY) ?? "14", 10) || 14;
+
+function applyFontSize() {
+  localStorage.setItem(FONT_KEY, String(fontSize));
+  for (const l of allLeavesAcrossTabs()) {
+    l.term.options.fontSize = fontSize;
+    try { l.fit.fit(); } catch {}
+  }
+}
+
+function allLeavesAcrossTabs(): Leaf[] {
+  const out: Leaf[] = [];
+  for (const t of tabs) forEachLeaf(t.root, (l) => out.push(l));
+  return out;
+}
+
+function bumpFontSize(delta: number) {
+  fontSize = Math.max(9, Math.min(28, fontSize + delta));
+  applyFontSize();
+}
+
 function activateTabByIndex(idx: number) {
   if (idx < 0 || idx >= tabs.length) return;
   activateTab(tabs[idx]);
@@ -463,6 +547,12 @@ window.addEventListener("keydown", (e) => {
   if (k === "d" && !e.shiftKey) { splitActive("h"); e.preventDefault(); return; }
   if (k === "d" &&  e.shiftKey) { splitActive("v"); e.preventDefault(); return; }
   if (k === "w" && !e.shiftKey) { closeActivePane(); e.preventDefault(); return; }
+  if (k === "k" && !e.shiftKey) { clearActive(); e.preventDefault(); return; }
+  if (k === "b" &&  e.shiftKey) { toggleBroadcast(); e.preventDefault(); return; }
+
+  if (!e.shiftKey && (k === "=" || k === "+")) { bumpFontSize(+1); e.preventDefault(); return; }
+  if (!e.shiftKey && (k === "-" || k === "_")) { bumpFontSize(-1); e.preventDefault(); return; }
+  if (!e.shiftKey && k === "0") { fontSize = 14; applyFontSize(); e.preventDefault(); return; }
 
   if (e.shiftKey) {
     if (k === "arrowleft")  { navigate("left");  e.preventDefault(); return; }
