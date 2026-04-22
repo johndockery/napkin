@@ -44,6 +44,7 @@ const SECTIONS: readonly Section[] = [
       { keys: "⌘F", description: "Search within pane" },
       { keys: "⌘G / ⌘⇧G", description: "Next / previous match" },
       { keys: "⌘↑ / ⌘↓", description: "Jump between prompts in the pane" },
+      { keys: "⌘⇧M", description: "Bookmark current scrollback position" },
     ],
   },
   {

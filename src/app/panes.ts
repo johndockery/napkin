@@ -100,6 +100,7 @@ export function createLeafPane(
     runState: "idle",
     agent: null,
     promptMarks: [],
+    bookmarks: [],
   };
 
   element.addEventListener("mousedown", () => options.onFocusRequested(leaf), true);

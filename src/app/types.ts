@@ -42,6 +42,11 @@ export interface LeafPane {
    * chapters via Cmd+↑ / Cmd+↓.
    */
   readonly promptMarks: number[];
+  /**
+   * User-pinned scrollback positions. Pinned via Cmd+Shift+M; surfaced in
+   * the command palette for recall.
+   */
+  readonly bookmarks: Array<{ line: number; label: string; createdAt: number }>;
 }
 
 export interface SplitPane {

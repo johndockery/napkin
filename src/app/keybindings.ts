@@ -20,6 +20,7 @@ export interface KeybindingHandlers {
   readonly toggleCommandPalette: () => void;
   readonly jumpToWaitingAgent: () => void;
   readonly jumpToPrompt: (direction: "previous" | "next") => void;
+  readonly addBookmark: () => void;
 }
 
 export function registerKeybindings(
@@ -110,6 +111,11 @@ export function registerKeybindings(
     }
     if (!event.shiftKey && key === "arrowdown") {
       handlers.jumpToPrompt("next");
+      event.preventDefault();
+      return;
+    }
+    if (key === "m" && event.shiftKey) {
+      handlers.addBookmark();
       event.preventDefault();
       return;
     }

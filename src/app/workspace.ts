@@ -278,6 +278,22 @@ export async function bootWorkspace(
         shortcut: "⌘/",
         run: () => help.toggle(),
       },
+      {
+        id: "add-bookmark",
+        category: "Scrollback",
+        title: "Bookmark current scrollback position",
+        shortcut: "⌘⇧M",
+        run: () => addBookmark(),
+      },
+      // Bookmarks for the active leaf are injected dynamically at the end
+      // so they land in the palette under a "Bookmarks" section and route
+      // straight to a jump.
+      ...(state.activeTab?.activeLeaf?.bookmarks ?? []).map((mark, index) => ({
+        id: `bookmark-${state.activeTab!.id}-${index}`,
+        category: "Bookmarks",
+        title: mark.label,
+        run: () => jumpToBookmark(state.activeTab!.activeLeaf!, mark.line),
+      })),
     ],
   });
 
@@ -619,6 +635,30 @@ export async function bootWorkspace(
     state.activeTab?.activeLeaf?.terminal.clear();
   };
 
+  const addBookmark = (): void => {
+    const leaf = state.activeTab?.activeLeaf;
+    if (!leaf) return;
+    const buffer = leaf.terminal.buffer.active;
+    const line = buffer.viewportY;
+    // Avoid duplicating a bookmark at the exact same line.
+    if (leaf.bookmarks.some((b) => b.line === line)) return;
+    const now = new Date();
+    const label = `bookmark @ ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
+    leaf.bookmarks.push({ line, label, createdAt: now.getTime() });
+    if (leaf.bookmarks.length > 64) {
+      leaf.bookmarks.splice(0, leaf.bookmarks.length - 64);
+    }
+  };
+
+  const jumpToBookmark = (leaf: LeafPane, line: number): void => {
+    if (state.activeTab !== leaf.tab) {
+      activateTab(leaf.tab, { focusTerminal: false });
+    }
+    leaf.tab.activeLeaf = leaf;
+    focusLeaf(leaf);
+    leaf.terminal.scrollToLine(line);
+  };
+
   const jumpToPrompt = (direction: "previous" | "next"): void => {
     const leaf = state.activeTab?.activeLeaf;
     if (!leaf || leaf.promptMarks.length === 0) {
@@ -920,6 +960,7 @@ export async function bootWorkspace(
     toggleCommandPalette: () => commandPalette.toggle(),
     jumpToWaitingAgent,
     jumpToPrompt,
+    addBookmark,
   });
 
   window.addEventListener("resize", () => {
