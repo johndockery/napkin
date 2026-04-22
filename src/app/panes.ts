@@ -7,10 +7,7 @@ import { Terminal } from "@xterm/xterm";
 import { registerClipboardHandler } from "./clipboard.ts";
 import { killPty, resizePty, spawnPty, subscribePty, writePty } from "./ipc.ts";
 import { registerFilePathLinks } from "./links.ts";
-import {
-  TERMINAL_FONT_FAMILY,
-  TERMINAL_THEME,
-} from "./theme.ts";
+import { TERMINAL_OPTIONS } from "./theme.ts";
 import type {
   LeafPane,
   NavigationDirection,
@@ -34,6 +31,13 @@ export interface LeafIoOptions {
   readonly reportInvokeError: (context: string, error: unknown) => void;
   /** When set, attach to this existing daemon session instead of spawning. */
   readonly existingSessionId?: string;
+  /** Overrides from user config for newly-spawned shells. */
+  readonly spawnOverrides?: {
+    readonly shell?: string;
+    readonly shellArgs?: readonly string[];
+    readonly env?: Readonly<Record<string, string>>;
+    readonly cwd?: string;
+  };
 }
 
 export function attachLinkProviders(
@@ -55,16 +59,8 @@ export function createLeafPane(
   element.appendChild(terminalHostElement);
 
   const terminal = new Terminal({
-    fontFamily: TERMINAL_FONT_FAMILY,
+    ...TERMINAL_OPTIONS,
     fontSize: options.fontSize,
-    lineHeight: 1.35,
-    cursorBlink: true,
-    cursorStyle: "bar",
-    cursorWidth: 2,
-    scrollback: 10_000,
-    smoothScrollDuration: 80,
-    allowTransparency: true,
-    theme: TERMINAL_THEME,
   });
   const fitAddon = new FitAddon();
   const searchAddon = new SearchAddon();
@@ -142,6 +138,15 @@ export async function mountLeafPane(
   const rows = Math.max(1, leaf.terminal.rows);
   const cols = Math.max(1, leaf.terminal.cols);
 
+  const spawnArgs = {
+    rows,
+    cols,
+    shell: options.spawnOverrides?.shell,
+    shellArgs: options.spawnOverrides?.shellArgs,
+    env: options.spawnOverrides?.env,
+    cwd: options.spawnOverrides?.cwd,
+  };
+
   let sessionId: string;
   if (options.existingSessionId) {
     sessionId = options.existingSessionId;
@@ -151,10 +156,10 @@ export async function mountLeafPane(
       // Session vanished from the daemon (shell exited before we could
       // reattach). Fall back to spawning a fresh one.
       options.reportInvokeError(`pty_subscribe(${sessionId})`, error);
-      sessionId = await spawnPty({ rows, cols });
+      sessionId = await spawnPty(spawnArgs);
     }
   } else {
-    sessionId = await spawnPty({ rows, cols });
+    sessionId = await spawnPty(spawnArgs);
   }
 
   if (isLeafDisposed(leaf)) {
@@ -376,6 +381,37 @@ export function fitLeafPane(leaf: LeafPane): void {
 
 export function setLeafFontSize(leaf: LeafPane, fontSize: number): void {
   leaf.terminal.options.fontSize = fontSize;
+  fitLeafPane(leaf);
+}
+
+/**
+ * Apply a freshly loaded config to a running terminal. Updates every option
+ * xterm can change in-place; things that would need a re-mount (e.g.
+ * scrollback reduction that drops history) are safely no-ops via xterm's
+ * own clamping.
+ */
+export function applyTerminalOptions(
+  leaf: LeafPane,
+  overrides: {
+    readonly fontFamily: string;
+    readonly fontSize: number;
+    readonly lineHeight: number;
+    readonly letterSpacing: number;
+    readonly cursorStyle: "block" | "bar" | "underline";
+    readonly cursorBlink: boolean;
+    readonly scrollback: number;
+    readonly theme: import("@xterm/xterm").ITheme;
+  },
+): void {
+  const t = leaf.terminal;
+  t.options.fontFamily = overrides.fontFamily;
+  t.options.fontSize = overrides.fontSize;
+  t.options.lineHeight = overrides.lineHeight;
+  t.options.letterSpacing = overrides.letterSpacing;
+  t.options.cursorStyle = overrides.cursorStyle;
+  t.options.cursorBlink = overrides.cursorBlink;
+  t.options.scrollback = overrides.scrollback;
+  t.options.theme = overrides.theme;
   fitLeafPane(leaf);
 }
 

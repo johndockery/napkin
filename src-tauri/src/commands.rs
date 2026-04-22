@@ -29,6 +29,10 @@ pub(crate) struct SpawnArgs {
     cwd: Option<String>,
     #[serde(default)]
     shell: Option<String>,
+    #[serde(default)]
+    shell_args: Vec<String>,
+    #[serde(default)]
+    env: std::collections::BTreeMap<String, String>,
 }
 
 #[tauri::command]
@@ -38,6 +42,8 @@ pub(crate) fn pty_spawn(client: State<'_, Client>, args: SpawnArgs) -> Result<St
         cols: args.cols,
         cwd: args.cwd,
         shell: args.shell,
+        shell_args: args.shell_args,
+        env: args.env,
     })? {
         ServerOp::SpawnOk { session_id } => Ok(session_id),
         ServerOp::Err { error } => Err(error),

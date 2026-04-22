@@ -28,4 +28,6 @@ tauri = { version = "2", features = [] }
 tauri-plugin-notification = "2"
 serde = { workspace = true }
 serde_json = { workspace = true }
+toml = { workspace = true }
+notify = { workspace = true }
 napkin-proto = { workspace = true }

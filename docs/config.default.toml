@@ -1,0 +1,103 @@
+# napkin config
+#
+# Lives at ~/.config/napkin/config.toml (or $XDG_CONFIG_HOME/napkin/config.toml).
+# Every key here is optional — unset keys fall back to the defaults shown.
+# Changes are applied live while the app is running.
+#
+# Full reference: CONFIG.md in the napkin repo.
+
+
+# ─── shell ──────────────────────────────────────────────────────────
+[shell]
+# program = "/opt/homebrew/bin/fish"   # defaults to $SHELL, else /bin/bash
+# args    = ["-l"]
+# env     = { FOO = "bar" }
+# cwd     = "~/code"                   # starting directory for new panes
+
+
+# ─── window ─────────────────────────────────────────────────────────
+[window]
+# opacity = 1.0         # 0.0 – 1.0
+# blur    = true        # macOS vibrancy behind the window
+# padding = 8           # pixels between terminal content and window chrome
+
+
+# ─── terminal ───────────────────────────────────────────────────────
+[terminal]
+# font_family     = "JetBrains Mono, SF Mono, Menlo, monospace"
+# font_size       = 14
+# line_height     = 1.35
+# letter_spacing  = 0.0     # em
+# cursor_style    = "bar"   # "block" | "bar" | "underline"
+# cursor_blink    = true
+# scrollback      = 10000   # lines kept per pane
+# bell            = "none"  # "none" | "visual" | "sound"
+# copy_on_select  = false
+
+
+# ─── theme ──────────────────────────────────────────────────────────
+# All colors accept CSS-style hex / rgba().
+[terminal.theme]
+# background           = "rgba(0,0,0,0)"
+# foreground           = "#e6e6e6"
+# cursor               = "#fefbf4"
+# selection_background = "rgba(254, 251, 244, 0.22)"
+# black          = "#1c1c1c"
+# red            = "#e06c75"
+# green          = "#98c379"
+# yellow         = "#e5c07b"
+# blue           = "#61afef"
+# magenta        = "#c678dd"
+# cyan           = "#56b6c2"
+# white          = "#dcdfe4"
+# bright_black   = "#5c6370"
+# bright_red     = "#e06c75"
+# bright_green   = "#98c379"
+# bright_yellow  = "#e5c07b"
+# bright_blue    = "#61afef"
+# bright_magenta = "#c678dd"
+# bright_cyan    = "#56b6c2"
+# bright_white   = "#ffffff"
+
+
+# ─── tabs ───────────────────────────────────────────────────────────
+# Auto-tint the tab when one of these commands becomes the foreground.
+# Accepted colors: red, amber, green, teal, blue, purple, pink.
+[tabs.color_by_command]
+# claude = "amber"
+# codex  = "purple"
+# gh     = "green"
+# cargo  = "red"
+
+
+# ─── agents ─────────────────────────────────────────────────────────
+[agents]
+# detect          = true                          # classify commands as agents
+# notify_on       = ["waiting", "error"]          # desktop notifications
+# cost_budget_usd = 0.0                           # 0 disables
+
+
+# ─── keybindings ────────────────────────────────────────────────────
+# Override defaults. Modifier order is flexible; case-insensitive.
+# Set a value to "" to disable a binding.
+# Action names: see CONFIG.md for the full list.
+[keybindings]
+# new_tab          = "Cmd+T"
+# close_pane       = "Cmd+W"
+# next_tab         = "Cmd+Shift+]"
+# previous_tab     = "Cmd+Shift+["
+# split_horizontal = "Cmd+D"
+# split_vertical   = "Cmd+Shift+D"
+# find             = "Cmd+F"
+# history          = "Cmd+Shift+F"
+# command_palette  = "Cmd+Shift+P"
+# pane_palette     = "Cmd+P"
+# toggle_help      = "Cmd+/"
+# broadcast        = "Cmd+Shift+B"
+# write_lock       = "Cmd+Shift+L"
+
+
+# ─── integrations ───────────────────────────────────────────────────
+[integrations]
+# editor    = "code"    # override $EDITOR for file links
+# diff_tool = ""        # reserved for future use

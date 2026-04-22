@@ -78,6 +78,8 @@ pub(crate) fn resurrect_session(
         80,
         Some(cwd),
         None,
+        Vec::new(),
+        std::collections::BTreeMap::new(),
         initial_subscriber,
         storage,
     )?;
@@ -89,10 +91,14 @@ pub(crate) fn spawn_session(
     cols: u16,
     cwd: Option<String>,
     shell: Option<String>,
+    shell_args: Vec<String>,
+    env: std::collections::BTreeMap<String, String>,
     initial_subscriber: Sender<ServerMsg>,
     storage: Arc<Storage>,
 ) -> Result<(String, Arc<Mutex<Session>>), String> {
-    spawn_session_inner(None, rows, cols, cwd, shell, initial_subscriber, storage)
+    spawn_session_inner(
+        None, rows, cols, cwd, shell, shell_args, env, initial_subscriber, storage,
+    )
 }
 
 fn spawn_session_inner(
@@ -101,6 +107,8 @@ fn spawn_session_inner(
     cols: u16,
     cwd: Option<String>,
     shell: Option<String>,
+    extra_shell_args: Vec<String>,
+    extra_env: std::collections::BTreeMap<String, String>,
     initial_subscriber: Sender<ServerMsg>,
     storage: Arc<Storage>,
 ) -> Result<(String, Arc<Mutex<Session>>), String> {
@@ -182,7 +190,19 @@ fn spawn_session_inner(
         }
     }
 
+    // User-supplied shell args appended after any shim flags. Typically
+    // things like `-l` for a login shell.
+    for arg in &extra_shell_args {
+        cmd.arg(arg);
+    }
+
+    // User env overrides inherited + shim-provided values.
+    for (k, v) in &extra_env {
+        cmd.env(k, v);
+    }
+
     let start_cwd = cwd
+        .map(expand_home)
         .or_else(|| std::env::var("HOME").ok())
         .unwrap_or_else(|| "/".into());
     cmd.cwd(&start_cwd);
@@ -451,6 +471,23 @@ fn current_exe_dir() -> Option<std::path::PathBuf> {
     std::env::current_exe()
         .ok()
         .and_then(|exe| exe.parent().map(std::path::PathBuf::from))
+}
+
+/// Expand a leading `~` (or `~/...`) to $HOME. The PTY spawn path doesn't
+/// run through a shell, so we do it ourselves to save users from writing
+/// absolute paths in their config.
+fn expand_home(path: String) -> String {
+    if path == "~" {
+        if let Ok(home) = std::env::var("HOME") {
+            return home;
+        }
+    }
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return format!("{home}/{rest}");
+        }
+    }
+    path
 }
 
 /// Send a message to every live subscriber; drop any whose channel has closed.

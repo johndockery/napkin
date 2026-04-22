@@ -8,7 +8,13 @@
   --chrome-h: 36px;
   --accent: #fefbf4;
   --accent-soft: rgba(254, 251, 244, 0.4);
+  /* overridden by applyConfig() from user config */
+  --window-opacity: 1;
+  --pane-padding: 8px;
+  --terminal-bg: transparent;
 }
+
+#app { opacity: var(--window-opacity); }
 
 * { box-sizing: border-box; }
 
@@ -40,7 +46,7 @@ html, body {
   height: var(--chrome-h);
   min-height: var(--chrome-h);
   display: grid;
-  grid-template-columns: 82px 1fr 16px;
+  grid-template-columns: 82px 1fr 40px;
   align-items: stretch;
   border-bottom: 1px solid var(--border);
   background: rgba(11, 12, 15, 0.7);
@@ -715,7 +721,21 @@ html, body {
   color: var(--fg);
 }
 
-.chrome-right { /* reserves a small strip for drag on the far right */ }
+.chrome-right {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-right: 6px;
+}
+
+.chrome-logo {
+  width: 24px;
+  height: 24px;
+  opacity: 0.85;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
 
 #new-tab {
   flex-shrink: 0;
@@ -834,7 +854,7 @@ html, body {
 .pane-term {
   flex: 1 1 auto;
   min-height: 0;
-  padding: 8px 10px 8px 12px;
+  padding: var(--pane-padding) calc(var(--pane-padding) + 2px) var(--pane-padding) calc(var(--pane-padding) + 4px);
 }
 
 .split {

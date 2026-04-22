@@ -169,7 +169,18 @@ fn dispatch(
             cols,
             cwd,
             shell,
-        } => match spawn_session(rows, cols, cwd, shell, tx.clone(), storage.clone()) {
+            shell_args,
+            env,
+        } => match spawn_session(
+            rows,
+            cols,
+            cwd,
+            shell,
+            shell_args,
+            env,
+            tx.clone(),
+            storage.clone(),
+        ) {
             Ok((sid, session)) => {
                 {
                     let cwd = lock_or_recover(&session).cwd.clone();

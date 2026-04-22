@@ -59,26 +59,43 @@ See [`HOOKS.md`](./HOOKS.md) for setup. Short version:
 
 ## Configuration
 
-Optional. Napkin reads `~/.config/napkin/config.json` (or
-`$XDG_CONFIG_HOME/napkin/config.json`) on startup:
+napkin reads `~/.config/napkin/config.toml` (or
+`$XDG_CONFIG_HOME/napkin/config.toml`) at startup and watches it for
+changes — themes, fonts, keybindings, and notification rules re-apply the
+moment you save. Everything is optional; unknown keys are ignored.
 
-```json
-{
-  "terminal": {
-    "font_family": "\"JetBrains Mono\", Menlo, monospace",
-    "font_size": 14,
-    "theme": {
-      "background": "#0b0c0f",
-      "foreground": "#e6e6e6",
-      "cursor": "#f5a742"
-    }
-  }
-}
+```toml
+[shell]
+program = "/opt/homebrew/bin/fish"
+
+[terminal]
+font_family  = "JetBrainsMono Nerd Font"
+font_size    = 15
+cursor_style = "block"
+
+[keybindings]
+command_palette = "Cmd+Shift+Space"
+
+[tabs.color_by_command]
+claude = "amber"
+cargo  = "red"
 ```
 
-Every field is optional; unknown fields are ignored. The font size set
-via `Cmd+=` / `Cmd+-` persists per-user in localStorage and overrides
-the config value.
+Quick access:
+
+```
+napkin config          # opens the file in $EDITOR (creates it on first run)
+napkin config path     # prints the resolved path
+napkin config validate # parses the file and reports syntax errors
+```
+
+Or from the command palette (⌘⇧P): "napkin: Open config…".
+
+The full reference — every key, type, default, and the list of recognized
+keybinding actions — is in [CONFIG.md](./CONFIG.md).
+
+The font size set via `Cmd+=` / `Cmd+-` persists per-user in localStorage and
+overrides the config value until you run "Font: reset" (⌘0).
 
 ## Install
 
@@ -136,9 +153,8 @@ napkin/
 │   └── systemd/napkind.service Linux user-unit
 ├── .github/workflows/release.yml  tag-triggered release bundle
 ├── CHANGELOG.md              release notes
-├── PLAN.md                   product plan and roadmap
-├── HOOKS.md                  agent hook reference
-└── LANDING.md                landing-page brief (for design tools)
+├── CONFIG.md                 user config reference
+└── HOOKS.md                  agent hook reference
 ```
 
 ## Architectural tenets
@@ -156,5 +172,3 @@ napkin/
 ## License
 
 MIT. See [`LICENSE`](./LICENSE).
-
-See [`PLAN.md`](./PLAN.md) for the roadmap.

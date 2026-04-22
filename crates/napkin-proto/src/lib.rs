@@ -24,8 +24,16 @@ pub enum ClientOp {
         cols: u16,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cwd: Option<String>,
+        /// Shell program to spawn. Falls back to $SHELL when not set.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         shell: Option<String>,
+        /// Extra args appended after the daemon's own shim flags.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        shell_args: Vec<String>,
+        /// Extra environment variables to export in the child. Overlaid on
+        /// top of the daemon's inherited env and shim injections.
+        #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+        env: std::collections::BTreeMap<String, String>,
     },
     Write {
         session_id: String,

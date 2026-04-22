@@ -39,6 +39,8 @@ export interface PtySpawnArgs {
   readonly cols: number;
   readonly cwd?: string;
   readonly shell?: string;
+  readonly shellArgs?: readonly string[];
+  readonly env?: Readonly<Record<string, string>>;
 }
 
 export interface PtyOutputEvent {
@@ -78,11 +80,42 @@ export interface PaneStatusEvent {
 }
 
 export async function spawnPty(args: PtySpawnArgs): Promise<string> {
-  return invoke<string>("pty_spawn", { args });
+  // Tauri uses snake_case on the Rust side; map our camelCase here.
+  const wire: Record<string, unknown> = {
+    rows: args.rows,
+    cols: args.cols,
+  };
+  if (args.cwd) wire.cwd = args.cwd;
+  if (args.shell) wire.shell = args.shell;
+  if (args.shellArgs && args.shellArgs.length > 0) wire.shell_args = args.shellArgs;
+  if (args.env && Object.keys(args.env).length > 0) wire.env = args.env;
+  return invoke<string>("pty_spawn", { args: wire });
 }
 
 export async function loadConfig(): Promise<unknown> {
   return invoke<unknown>("load_config");
+}
+
+export async function configPath(): Promise<string> {
+  return invoke<string>("config_path_string");
+}
+
+export async function configOpen(): Promise<void> {
+  await invoke("config_open");
+}
+
+export async function configReveal(): Promise<void> {
+  await invoke("config_reveal");
+}
+
+export async function configReset(): Promise<string> {
+  return invoke<string>("config_reset");
+}
+
+export async function onConfigChanged(
+  handler: (value: unknown) => void,
+): Promise<UnlistenFn> {
+  return listen<unknown>("config-changed", ({ payload }) => handler(payload));
 }
 
 export async function openInEditor(

@@ -2,8 +2,12 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type { ErrorReporter } from "./errors.ts";
 import {
+  configOpen,
+  configReset,
+  configReveal,
   listPtySessions,
   loadConfig,
+  onConfigChanged,
   onPaneAgent,
   onPaneCwd,
   onPaneMark,
@@ -21,6 +25,7 @@ import { createPanePalette, type PalettePaneEntry } from "./palette.ts";
 import { createSearchController } from "./search.ts";
 import { registerKeybindings } from "./keybindings.ts";
 import {
+  applyTerminalOptions,
   createLeafPane,
   createSplitPane,
   disposeLeafPane,
@@ -47,6 +52,7 @@ import {
   DEFAULT_FONT_SIZE,
   loadFontSize,
   saveFontSize,
+  type ResolvedConfig,
 } from "./theme.ts";
 import type {
   AppElements,
@@ -98,7 +104,7 @@ export async function bootWorkspace(
   } catch (error) {
     reporter.report("failed to load config", error, { level: "warn" });
   }
-  const config = applyConfig(rawConfig);
+  let config: ResolvedConfig = applyConfig(rawConfig);
 
   const storedFontSize = window.localStorage.getItem("napkin:fontSize");
   const initialFontSize =
@@ -290,6 +296,41 @@ export async function bootWorkspace(
         run: () => help.toggle(),
       },
       {
+        id: "config-open",
+        category: "Config",
+        title: "napkin: Open config…",
+        run: () => runAsync(() => configOpen(), "failed to open config"),
+      },
+      {
+        id: "config-reveal",
+        category: "Config",
+        title: "napkin: Reveal config in Finder",
+        run: () => runAsync(() => configReveal(), "failed to reveal config"),
+      },
+      {
+        id: "config-reload",
+        category: "Config",
+        title: "napkin: Reload config",
+        run: () =>
+          runAsync(async () => {
+            const raw = await loadConfig();
+            config = applyConfig(raw);
+            reapplyConfigToLeaves();
+          }, "failed to reload config"),
+      },
+      {
+        id: "config-reset",
+        category: "Config",
+        title: "napkin: Reset config to defaults",
+        run: () =>
+          runAsync(async () => {
+            await configReset();
+            const raw = await loadConfig();
+            config = applyConfig(raw);
+            reapplyConfigToLeaves();
+          }, "failed to reset config"),
+      },
+      {
         id: "add-bookmark",
         category: "Scrollback",
         title: "Bookmark current scrollback position",
@@ -324,6 +365,46 @@ export async function bootWorkspace(
     }
     return leaves;
   };
+
+  const currentSpawnOverrides = () => {
+    const { program, args, env, cwd } = config.shell;
+    const overrides: {
+      shell?: string;
+      shellArgs?: readonly string[];
+      env?: Readonly<Record<string, string>>;
+      cwd?: string;
+    } = {};
+    if (program) overrides.shell = program;
+    if (args.length > 0) overrides.shellArgs = args;
+    if (Object.keys(env).length > 0) overrides.env = env;
+    if (cwd) overrides.cwd = cwd;
+    return overrides;
+  };
+
+  const reapplyConfigToLeaves = (): void => {
+    const term = config.terminal;
+    for (const leaf of listLeaves()) {
+      applyTerminalOptions(leaf, {
+        fontFamily: term.fontFamily,
+        fontSize: state.fontSize,
+        lineHeight: term.lineHeight,
+        letterSpacing: term.letterSpacing,
+        cursorStyle: term.cursorStyle,
+        cursorBlink: term.cursorBlink,
+        scrollback: term.scrollback,
+        theme: term.theme,
+      });
+    }
+  };
+
+  await onConfigChanged((raw) => {
+    try {
+      config = applyConfig(raw);
+      reapplyConfigToLeaves();
+    } catch (error) {
+      reporter.report("failed to apply reloaded config", error, { level: "warn" });
+    }
+  });
 
   // A command-end mark briefly paints the tab ok/error so a quick glance
   // reveals how the last command finished, then settles back to idle.
@@ -490,6 +571,7 @@ export async function bootWorkspace(
         getBroadcastTargets: () => listBroadcastTargets(tab),
         reportInvokeError,
         existingSessionId: options.attachTo,
+        spawnOverrides: currentSpawnOverrides(),
       });
       focusLeaf(root);
     }
@@ -583,6 +665,7 @@ export async function bootWorkspace(
       leavesBySessionId: state.leavesBySessionId,
       getBroadcastTargets: () => listBroadcastTargets(tab),
       reportInvokeError,
+      spawnOverrides: currentSpawnOverrides(),
     });
     focusLeaf(nextLeaf);
   };
@@ -823,7 +906,8 @@ export async function bootWorkspace(
         // Notify on agent completion when the user is focused elsewhere.
         // Runs before the Agent(None) event arrives, so leaf.agent is still
         // populated.
-        if (leaf.agent) {
+        const notifyState = outcome === "ok" ? "done" : "error";
+        if (leaf.agent && config.agents.notifyOn.has(notifyState)) {
           const tabLabel = leaf.tab.customName ?? leaf.tab.labelElement.textContent ?? leaf.tab.id;
           const verb = outcome === "ok" ? "finished" : `exited ${exit ?? "with error"}`;
           notifications.notifyBackground({
@@ -890,7 +974,7 @@ export async function bootWorkspace(
     }
 
     setLeafRunState(leaf, normalized);
-    if (normalized === "waiting") {
+    if (normalized === "waiting" && config.agents.notifyOn.has("waiting")) {
       const tabLabel =
         leaf.tab.customName ??
         leaf.tab.labelElement.textContent ??
@@ -911,6 +995,17 @@ export async function bootWorkspace(
     leaf.agent = agent;
     if (leaf.tab.activeLeaf === leaf) {
       setTabAgent(leaf.tab, agent);
+    }
+    // Auto-color tabs by foreground command when the user has configured it.
+    // Only applies when the tab has no explicit user-picked color — don't
+    // stomp on manual choices.
+    if (agent && !leaf.tab.color) {
+      const mapped = config.tabs.colorByCommand[agent.toLowerCase()];
+      if (mapped) {
+        applyTabColor(leaf.tab, mapped);
+      }
+    } else if (!agent && !leaf.tab.color) {
+      applyTabColor(leaf.tab, null);
     }
     palette.refresh();
   });
@@ -976,36 +1071,40 @@ export async function bootWorkspace(
     runAsync(() => openNewTab(), "failed to open new tab");
   });
 
-  registerKeybindings(window, {
-    activateTabByIndex,
-    bumpFontSize,
-    clearActive,
-    closeActivePane: () => {
-      runAsync(() => closeActivePane(), "failed to close pane");
+  registerKeybindings(
+    window,
+    {
+      activateTabByIndex,
+      bumpFontSize,
+      clearActive,
+      closeActivePane: () => {
+        runAsync(() => closeActivePane(), "failed to close pane");
+      },
+      cycleTab,
+      navigate,
+      openNewTab: () => {
+        runAsync(() => openNewTab(), "failed to open new tab");
+      },
+      resetFontSize,
+      splitActive: (direction) => {
+        runAsync(() => splitActive(direction), "failed to split pane");
+      },
+      toggleAgentPalette: () => palette.toggle("agents"),
+      togglePanePalette: () => palette.toggle("all"),
+      toggleBroadcast,
+      toggleSearch: () => search.toggle(),
+      toggleHistorySearch: () => historyPalette.toggle(),
+      findNextInPane: () => search.findNext(),
+      findPreviousInPane: () => search.findPrevious(),
+      toggleHelp: () => help.toggle(),
+      toggleCommandPalette: () => commandPalette.toggle(),
+      jumpToWaitingAgent,
+      jumpToPrompt,
+      addBookmark,
+      toggleWriteLock,
     },
-    cycleTab,
-    navigate,
-    openNewTab: () => {
-      runAsync(() => openNewTab(), "failed to open new tab");
-    },
-    resetFontSize,
-    splitActive: (direction) => {
-      runAsync(() => splitActive(direction), "failed to split pane");
-    },
-    toggleAgentPalette: () => palette.toggle("agents"),
-    togglePanePalette: () => palette.toggle("all"),
-    toggleBroadcast,
-    toggleSearch: () => search.toggle(),
-    toggleHistorySearch: () => historyPalette.toggle(),
-    findNextInPane: () => search.findNext(),
-    findPreviousInPane: () => search.findPrevious(),
-    toggleHelp: () => help.toggle(),
-    toggleCommandPalette: () => commandPalette.toggle(),
-    jumpToWaitingAgent,
-    jumpToPrompt,
-    addBookmark,
-    toggleWriteLock,
-  });
+    config.keybindings,
+  );
 
   window.addEventListener("resize", () => {
     if (!state.activeTab) {
