@@ -57,3 +57,44 @@ pub fn ensure_zsh_shim() -> Result<PathBuf, String> {
     std::fs::write(dir.join(".zshrc"), ZSH_ZSHRC).map_err(|e| e.to_string())?;
     Ok(dir)
 }
+
+const BASH_RCFILE: &str = r#"# napkin shell integration for bash
+# Sources the user's ~/.bashrc and installs OSC 133 + OSC 7 hooks.
+
+[[ -f "$HOME/.bashrc" ]] && . "$HOME/.bashrc"
+
+__napkin_prompt_command() {
+    local exit=$?
+    printf '\e]133;D;%d\a\e]133;A\a\e]7;file://%s%s\a' \
+        "$exit" "${HOSTNAME:-localhost}" "$PWD"
+}
+
+__napkin_preexec() {
+    # Only emit on top-level commands; skip subshell noise and our own hooks.
+    [[ $BASH_SUBSHELL -gt 0 ]] && return
+    case "$BASH_COMMAND" in
+        __napkin_*) return ;;
+    esac
+    printf '\e]8274;cmd;%s\a\e]133;C;\a' "$BASH_COMMAND"
+}
+
+if [[ -n "$PROMPT_COMMAND" && "$PROMPT_COMMAND" != *__napkin_prompt_command* ]]; then
+    PROMPT_COMMAND="__napkin_prompt_command;${PROMPT_COMMAND}"
+else
+    PROMPT_COMMAND="__napkin_prompt_command"
+fi
+
+trap '__napkin_preexec' DEBUG
+
+# First prompt
+printf '\e]133;A\a\e]7;file://%s%s\a' "${HOSTNAME:-localhost}" "$PWD"
+"#;
+
+pub fn ensure_bash_shim() -> Result<PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    let dir = PathBuf::from(&home).join(".local/share/napkin/bash");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let rcfile = dir.join("bashrc");
+    std::fs::write(&rcfile, BASH_RCFILE).map_err(|e| e.to_string())?;
+    Ok(rcfile)
+}

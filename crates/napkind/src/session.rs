@@ -9,7 +9,7 @@ use napkin_proto::{ServerMsg, ServerOp};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 
 use crate::osc::{OscEvent, OscScanner};
-use crate::shim::ensure_zsh_shim;
+use crate::shim::{ensure_bash_shim, ensure_zsh_shim};
 
 /// Maximum PTY bytes retained per session for replay on reattach.
 /// Roughly 2 MB — enough to cover ~10k lines of typical agent output while
@@ -64,7 +64,17 @@ pub(crate) fn spawn_session(
     let session_id = uuid::Uuid::new_v4().to_string();
     let socket = napkin_proto::socket_path();
 
+    let is_zsh = shell.ends_with("/zsh") || shell == "zsh";
+    let is_bash = shell.ends_with("/bash") || shell == "bash";
+
     let mut cmd = CommandBuilder::new(&shell);
+    if is_bash {
+        if let Ok(rcfile) = ensure_bash_shim() {
+            cmd.arg("--rcfile");
+            cmd.arg(rcfile.to_string_lossy().to_string());
+            cmd.arg("-i");
+        }
+    }
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("NAPKIN", "1");
@@ -82,7 +92,6 @@ pub(crate) fn spawn_session(
         cmd.env("PATH", new_path);
     }
 
-    let is_zsh = shell.ends_with("/zsh") || shell == "zsh";
     if is_zsh {
         if let Ok(dir) = ensure_zsh_shim() {
             cmd.env("ZDOTDIR", dir);
