@@ -98,3 +98,36 @@ pub fn ensure_bash_shim() -> Result<PathBuf, String> {
     std::fs::write(&rcfile, BASH_RCFILE).map_err(|e| e.to_string())?;
     Ok(rcfile)
 }
+
+const FISH_INIT: &str = r#"# napkin shell integration for fish
+# Loaded from conf.d at fish startup alongside any user config.
+
+function __napkin_prompt --on-event fish_prompt
+    set -l exit $status
+    printf '\e]133;D;%d\a\e]133;A\a\e]7;file://%s%s\a' \
+        $exit (hostname) (pwd)
+end
+
+function __napkin_preexec --on-event fish_preexec
+    printf '\e]8274;cmd;%s\a\e]133;C;\a' "$argv"
+end
+
+# First prompt
+printf '\e]133;A\a\e]7;file://%s%s\a' (hostname) (pwd)
+"#;
+
+pub fn ensure_fish_shim() -> Result<PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    // fish's XDG-style config root; conf.d files are auto-loaded.
+    let dir = PathBuf::from(&home).join(".local/share/napkin/fish/conf.d");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let file = dir.join("napkin.fish");
+    std::fs::write(&file, FISH_INIT).map_err(|e| e.to_string())?;
+    Ok(file)
+}
+
+/// Parent of our fish conf.d — what XDG_CONFIG_HOME/fish would normally be.
+pub fn fish_config_root() -> Result<PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    Ok(PathBuf::from(&home).join(".local/share/napkin/fish"))
+}

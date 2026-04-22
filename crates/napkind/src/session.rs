@@ -9,7 +9,7 @@ use napkin_proto::{ServerMsg, ServerOp};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 
 use crate::osc::{OscEvent, OscScanner};
-use crate::shim::{ensure_bash_shim, ensure_zsh_shim};
+use crate::shim::{ensure_bash_shim, ensure_fish_shim, ensure_zsh_shim, fish_config_root};
 
 /// Maximum PTY bytes retained per session for replay on reattach.
 /// Roughly 2 MB — enough to cover ~10k lines of typical agent output while
@@ -66,6 +66,7 @@ pub(crate) fn spawn_session(
 
     let is_zsh = shell.ends_with("/zsh") || shell == "zsh";
     let is_bash = shell.ends_with("/bash") || shell == "bash";
+    let is_fish = shell.ends_with("/fish") || shell == "fish";
 
     let mut cmd = CommandBuilder::new(&shell);
     if is_bash {
@@ -73,6 +74,22 @@ pub(crate) fn spawn_session(
             cmd.arg("--rcfile");
             cmd.arg(rcfile.to_string_lossy().to_string());
             cmd.arg("-i");
+        }
+    }
+    if is_fish {
+        // fish auto-loads conf.d/*.fish under each dir on XDG_DATA_DIRS and
+        // XDG_CONFIG_HOME. Point it at our shim dir so we don't clobber the
+        // user's real config.
+        if ensure_fish_shim().is_ok() {
+            if let Ok(root) = fish_config_root() {
+                let existing = std::env::var("XDG_DATA_DIRS").unwrap_or_default();
+                let new = if existing.is_empty() {
+                    root.to_string_lossy().to_string()
+                } else {
+                    format!("{}:{existing}", root.to_string_lossy())
+                };
+                cmd.env("XDG_DATA_DIRS", new);
+            }
         }
     }
     cmd.env("TERM", "xterm-256color");
