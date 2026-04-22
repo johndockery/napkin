@@ -16,6 +16,7 @@ export interface KeybindingHandlers {
   readonly toggleSearch: () => void;
   readonly findNextInPane: () => void;
   readonly findPreviousInPane: () => void;
+  readonly toggleHelp: () => void;
 }
 
 export function registerKeybindings(
@@ -81,6 +82,11 @@ export function registerKeybindings(
     }
     if (key === "g" && event.shiftKey) {
       handlers.findPreviousInPane();
+      event.preventDefault();
+      return;
+    }
+    if (key === "/") {
+      handlers.toggleHelp();
       event.preventDefault();
       return;
     }

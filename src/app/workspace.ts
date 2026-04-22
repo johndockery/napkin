@@ -12,6 +12,7 @@ import {
   onPtyOutput,
 } from "./ipc.ts";
 import { createNotificationGate } from "./notifications.ts";
+import { createHelpOverlay } from "./help.ts";
 import { createPanePalette, type PalettePaneEntry } from "./palette.ts";
 import { createSearchController } from "./search.ts";
 import { registerKeybindings } from "./keybindings.ts";
@@ -130,6 +131,8 @@ export async function bootWorkspace(
   const search = createSearchController(document, {
     getActiveLeaf: () => state.activeTab?.activeLeaf ?? null,
   });
+
+  const help = createHelpOverlay(document);
 
   const listLeaves = (): LeafPane[] => {
     const leaves: LeafPane[] = [];
@@ -675,6 +678,7 @@ export async function bootWorkspace(
     toggleSearch: () => search.toggle(),
     findNextInPane: () => search.findNext(),
     findPreviousInPane: () => search.findPrevious(),
+    toggleHelp: () => help.toggle(),
   });
 
   window.addEventListener("resize", () => {
