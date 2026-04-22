@@ -490,6 +490,13 @@ async function boot() {
     leaf.term.write(decoder.decode(new Uint8Array(ev.payload.data)));
   });
 
+  await listen<{ session_id: string; cwd: string }>("pane-cwd", (ev) => {
+    const leaf = leavesBySessionId.get(ev.payload.session_id);
+    if (!leaf) return;
+    leaf.cwd = ev.payload.cwd;
+    if (leaf.tab.activeLeaf === leaf) updateTabLabel(leaf.tab);
+  });
+
   await listen<{ session_id: string }>("pty-exit", (ev) => {
     const leaf = leavesBySessionId.get(ev.payload.session_id);
     if (!leaf) return;
