@@ -99,6 +99,9 @@ export function createLeafPane(
     cwd: "~",
     runState: "idle",
     agent: null,
+    agentTokens: null,
+    agentCostUsd: null,
+    agentRunningSince: null,
     promptMarks: [],
     bookmarks: [],
   };

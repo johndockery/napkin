@@ -40,13 +40,17 @@ pub(crate) fn dispatch_event(app: &AppHandle, op: ServerOp) {
             session_id,
             state,
             agent,
+            tokens,
+            cost_usd,
         } => {
             let _ = app.emit(
                 "pane-status",
                 serde_json::json!({
                     "session_id": session_id,
                     "state": state,
-                    "agent": agent
+                    "agent": agent,
+                    "tokens": tokens,
+                    "cost_usd": cost_usd
                 }),
             );
         }

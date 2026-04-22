@@ -30,6 +30,8 @@ interface RawPaneStatusEvent {
   readonly session_id: string;
   readonly state: string;
   readonly agent?: string | null;
+  readonly tokens?: number | null;
+  readonly cost_usd?: number | null;
 }
 
 export interface PtySpawnArgs {
@@ -71,6 +73,8 @@ export interface PaneStatusEvent {
   readonly sessionId: string;
   readonly state: string;
   readonly agent: string | null;
+  readonly tokens: number | null;
+  readonly costUsd: number | null;
 }
 
 export async function spawnPty(args: PtySpawnArgs): Promise<string> {
@@ -217,6 +221,8 @@ export async function onPaneStatus(
       sessionId: payload.session_id,
       state: payload.state,
       agent: payload.agent ?? null,
+      tokens: payload.tokens ?? null,
+      costUsd: payload.cost_usd ?? null,
     });
   });
 }

@@ -259,16 +259,9 @@ fn dispatch(
             session_id,
             state,
             agent,
+            tokens,
+            cost_usd,
         } => {
-            let exists = lock_or_recover(sessions).contains_key(&session_id);
-            if !exists {
-                reply(ServerOp::Err {
-                    error: "no such session".into(),
-                });
-                return;
-            }
-            // Broadcast to every subscriber of this session via the first
-            // one's channel; the session forwarder loop fans it out.
             let Some(session) = lock_or_recover(sessions).get(&session_id).cloned() else {
                 reply(ServerOp::Err {
                     error: "no such session".into(),
@@ -281,6 +274,8 @@ fn dispatch(
                     session_id,
                     state,
                     agent,
+                    tokens,
+                    cost_usd,
                 },
             };
             {

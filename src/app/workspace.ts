@@ -829,6 +829,8 @@ export async function bootWorkspace(
             agent: leaf.agent,
             runState: leaf.runState,
             leaf,
+            tokens: leaf.agentTokens,
+            costUsd: leaf.agentCostUsd,
           });
         });
       }
@@ -856,6 +858,19 @@ export async function bootWorkspace(
         setTabAgent(leaf.tab, event.agent);
       }
     }
+    if (event.tokens !== null) leaf.agentTokens = event.tokens;
+    if (event.costUsd !== null) leaf.agentCostUsd = event.costUsd;
+
+    // Track elapsed-running from state transitions. Reset on any transition
+    // out of the running span.
+    const wasRunning = leaf.runState === "running";
+    const nowRunning = normalized === "running";
+    if (nowRunning && !wasRunning) {
+      leaf.agentRunningSince = Date.now();
+    } else if (!nowRunning) {
+      leaf.agentRunningSince = null;
+    }
+
     setLeafRunState(leaf, normalized);
     if (normalized === "waiting") {
       const tabLabel =

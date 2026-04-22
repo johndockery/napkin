@@ -36,6 +36,12 @@ export interface LeafPane {
   runState: PaneRunState;
   /** Foreground agent name (e.g. "claude", "codex") or null when none. */
   agent: string | null;
+  /** Cumulative tokens reported by the agent via `napkin hook`. */
+  agentTokens: number | null;
+  /** Cumulative cost in USD reported by the agent. */
+  agentCostUsd: number | null;
+  /** Time (ms) when the current "running" span started, or null. */
+  agentRunningSince: number | null;
   /**
    * Absolute buffer-line numbers of prompt starts (OSC 133 A) in the
    * xterm scrollback, newest last. Used to jump between commands like

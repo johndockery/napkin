@@ -340,6 +340,18 @@ html, body {
   font-size: 11.5px;
 }
 
+.napkin-palette-metrics {
+  flex-shrink: 0;
+  color: var(--fg-dim);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  white-space: nowrap;
+}
+
 .napkin-command-item {
   grid-template-columns: auto 1fr auto;
   display: grid;

@@ -12,6 +12,8 @@ export interface PalettePaneEntry {
   readonly agent: string | null;
   readonly runState: PaneRunState;
   readonly leaf: LeafPane;
+  readonly tokens: number | null;
+  readonly costUsd: number | null;
 }
 
 export type PaletteMode = "all" | "agents";
@@ -26,6 +28,12 @@ export interface PanePalette {
 export interface PanePaletteOptions {
   readonly listEntries: () => PalettePaneEntry[];
   readonly onSelect: (leaf: LeafPane) => void;
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M tok`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k tok`;
+  return `${n} tok`;
 }
 
 const EMPTY_MESSAGES: Record<PaletteMode, string> = {
@@ -156,6 +164,16 @@ export function createPanePalette(
       path.textContent = entry.cwd;
 
       item.append(label, path);
+
+      if (entry.tokens !== null || entry.costUsd !== null) {
+        const metrics = doc.createElement("span");
+        metrics.className = "napkin-palette-metrics";
+        const bits: string[] = [];
+        if (entry.tokens !== null) bits.push(formatTokens(entry.tokens));
+        if (entry.costUsd !== null) bits.push(`$${entry.costUsd.toFixed(2)}`);
+        metrics.textContent = bits.join(" · ");
+        item.appendChild(metrics);
+      }
       item.addEventListener("mouseenter", () => {
         selectedIndex = index;
         updateSelection();

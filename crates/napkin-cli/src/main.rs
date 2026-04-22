@@ -55,17 +55,28 @@ fn hook_cmd(mut args: impl Iterator<Item = String>) -> ExitCode {
     let state = match args.next() {
         Some(s) => s,
         None => {
-            eprintln!("usage: napkin hook <state> [--agent <name>]");
+            eprintln!(
+                "usage: napkin hook <state> [--agent <name>] [--tokens <n>] [--cost <usd>]"
+            );
             return ExitCode::from(2);
         }
     };
     let mut agent: Option<String> = None;
+    let mut tokens: Option<u64> = None;
+    let mut cost_usd: Option<f64> = None;
     while let Some(arg) = args.next() {
-        if arg == "--agent" {
-            agent = args.next();
-        } else {
-            eprintln!("napkin: unexpected argument: {arg}");
-            return ExitCode::from(2);
+        match arg.as_str() {
+            "--agent" => agent = args.next(),
+            "--tokens" => {
+                tokens = args.next().and_then(|v| v.parse().ok());
+            }
+            "--cost" => {
+                cost_usd = args.next().and_then(|v| v.parse().ok());
+            }
+            _ => {
+                eprintln!("napkin: unexpected argument: {arg}");
+                return ExitCode::from(2);
+            }
         }
     }
 
@@ -96,6 +107,8 @@ fn hook_cmd(mut args: impl Iterator<Item = String>) -> ExitCode {
             session_id,
             state,
             agent,
+            tokens,
+            cost_usd,
         },
     };
     let line = match serde_json::to_string(&msg) {

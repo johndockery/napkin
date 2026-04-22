@@ -53,6 +53,13 @@ pub enum ClientOp {
         state: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         agent: Option<String>,
+        /// Cumulative tokens consumed by this agent session.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tokens: Option<u64>,
+        /// Cumulative cost in USD (caller supplies whatever currency is
+        /// reasonable for their agent; rendered verbatim with $ prefix).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cost_usd: Option<f64>,
     },
     /// Full-text search across the daemon's persisted command history.
     /// The match is substring against the command text for now.
@@ -120,6 +127,10 @@ pub enum ServerOp {
         state: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         agent: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tokens: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cost_usd: Option<f64>,
     },
     /// Reply to SearchHistory: every command matching the query, newest first.
     HistoryResults {
