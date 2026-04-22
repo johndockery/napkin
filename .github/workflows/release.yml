@@ -61,11 +61,11 @@ jobs:
         run: bun install
 
       - name: Build
-        env:
-          # Inject target into our sidecar bundling script by pre-exporting
-          # it; rustc -Vv normally already reports host, so this is mostly
-          # a safety net for cross-target jobs.
-          CARGO_BUILD_TARGET: ${{ matrix.rust-target }}
+        # We don't set CARGO_BUILD_TARGET here because each runner's host
+        # triple already matches its matrix entry (macos-latest=aarch64,
+        # macos-13=x86_64, ubuntu-latest=x86_64). Setting it would send
+        # artefacts to target/<triple>/release/ and break both bundle-
+        # sidecars and the "Collect artefacts" find paths below.
         run: bun run tauri build
 
       - name: Collect macOS artefacts
