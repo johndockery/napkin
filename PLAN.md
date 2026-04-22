@@ -8,211 +8,218 @@ and what's deliberately out of scope.
 
 ## Status
 
-### v0 (spike) — done
-Tauri 2 + vanilla-ts + xterm.js scaffold, PTY plumbing, custom window chrome,
-zsh running in a window.
+### v0 — done
+Tauri 2 + vanilla-ts + xterm.js scaffold, PTY plumbing, custom chrome.
 
-### v1 (tmux-like workspace) — done
-Pane splits with drag-resize and keyboard nav; tabs with rename, drag-reorder,
-and broadcast input; OSC 133 shell integration for zsh, bash, and fish;
-`napkind` daemon with session restore and scrollback replay; `napkin` CLI
-(`hook` / `list` / `attach`); config file at `~/.config/napkin/config.json`;
-clean module layout across four crates.
+### v1 — done
+Pane splits (drag-resize, keyboard nav, drag-reorder), tabs (rename,
+broadcast input), OSC 133 for zsh / bash / fish, `napkind` daemon with
+session restore and scrollback replay, `napkin` CLI (`hook` / `list` /
+`attach`), config file, module-split refactor.
 
-### v2 (agent-awareness edge) — done
-Per-pane run-state driven by OSC 133; agent detection from command names;
-explicit agent hooks via `napkin hook`; agent palette, pane palette,
-command palette, help overlay, pane-local search; OS notifications when a
-background pane transitions to waiting or finishes; inline image protocol
-(Sixel + iTerm2); clickable file paths that open in `$EDITOR`.
-
-### Refactor pass — done
-Module split across frontend (`src/app/`) and Tauri (`src-tauri/src/`);
-poisoned-lock-tolerant helpers; visible debug-overlay replaced with toast +
-console reporter; `cargo fmt` clean.
+### v2 — done (partial)
+Per-pane run-state indicator, agent detection from command names, agent
+hooks via `napkin hook`, agent palette, pane palette, command palette,
+help overlay, pane-local search, OS notifications, inline image protocol,
+clickable file paths.
 
 ### Docs — done
-`README.md`, `HOOKS.md`, this file, `LANDING.md`, `LICENSE` (MIT).
+`README.md`, `HOOKS.md`, this file, `LANDING.md`, `LICENSE`.
 
 ---
 
-## Milestone M1 — `v0.1.0` release (ship-readiness)
+## Milestone M1 — `v0.1.0` = "landing-page truthful"
 
-**Goal.** Turn the dev build into a thing a stranger can install in under a
-minute. No more "it works on my machine" disclaimers.
+**The bar has moved.** We don't ship `v0.1.0` until every claim on
+[napkin.html](./LANDING.md) is true, or has been explicitly dropped from
+the page. Shipping a half-built product with made-up specs is exactly the
+kind of thing we're trying not to do.
 
-**Acceptance.** A public GitHub release tagged `v0.1.0`, carrying a signed +
-notarised `.dmg`, linked from the README, with a 15-second demo clip above
-the fold.
+This milestone is broken into five phases you can do in sequence. The
+phases are ordered by dependency (later ones need things earlier ones
+land), not by impact.
 
-**Tasks.**
+### Phase A — quick wins (1–2 days)
+Closes small, user-visible gaps with near-zero risk.
 
-1. **Release-build verification.** `bun run tauri build` produces a working
-   `.app`. Launch it from `/Applications`, confirm panes / tabs / agent badge
-   / session restore work end-to-end. Catch anything that only works in dev
-   (e.g. `napkind` path resolution against `target/debug`).
-2. **Bundle the sibling binaries.** `napkind` and the `napkin` CLI must land
-   inside the bundle's `Resources` so `find_napkind()` and the PATH
-   prepending continue to work after install. `tauri.conf.json` gets a
-   `bundle.externalBin` list.
-3. **Info.plist metadata.** `NSSupportsSuddenTermination`, correct min macOS
-   version, bundle version string from `Cargo.toml`, human-readable
-   `CFBundleName`, copyright line.
-4. **Codesign + notarize.** Needs an Apple Developer account. Wire
-   `APPLE_CERTIFICATE` / `APPLE_ID` / `APPLE_PASSWORD` as GitHub secrets.
-   Until then, ship an unsigned `.dmg` with a note in the README about
-   right-clicking → Open.
-5. **GitHub Actions.** One workflow, triggers on `v*` tags. Runs on
-   `macos-latest`, builds the `.dmg`, uploads as a release asset.
-6. **Demo clip.** 15 seconds: new window, split pane, spawn Claude in one,
-   watch the agent badge + waiting pulse + OS notification. Export as
-   `docs/napkin-demo.gif`, embed in the README hero.
-7. **Release notes.** A short `CHANGELOG.md` opened with the v0.1.0 entry;
-   reproduces the highlights from this section.
-8. **Cut the tag.** `git tag v0.1.0 && git push --tags`. The workflow
-   uploads the asset; `gh release edit` adds the body copy.
+- [ ] Rebind agent palette from `Cmd+Shift+A` to `Cmd+J` and change its
+  semantics from "open a palette" to "jump to the next waiting agent"
+  (preserve the palette as `Cmd+Shift+A`)
+- [ ] Per-tab color picker — right-click a tab → swatch row → tab.color
+  tint; persisted via napkind session metadata
+- [ ] `Cmd+↑` / `Cmd+↓` jump between prompt boundaries in the active pane,
+  driven off the OSC 133 marks napkind already records
+- [ ] Scrollback bookmarks — `Cmd+Shift+K` pins the current prompt; jump
+  via a bookmark picker (reuses the palette scaffolding)
+- [ ] Drop or fix the architecture pills that aren't true: "Tokio",
+  "WebView2", "SQLite" until their phase lands
+
+### Phase B — persistence layer (3–5 days)
+Delivers the *"reboot, come back two days later, everything's still
+there"* promise and unlocks cross-session search.
+
+- [ ] Add SQLite to napkind for on-disk state. Schema: `sessions`,
+  `commands` (cmd, cwd, started_at, ended_at, exit_code, bytes_at_start),
+  `scrollback_chunks` (session_id, offset, bytes). The existing 2 MB ring
+  spills to disk every ~64 KB.
+- [ ] On napkind start, rebuild session index from SQLite so `napkin list`
+  survives reboot. PTYs themselves don't survive (kernel drops them), but
+  session *metadata* + scrollback history does.
+- [ ] Global scrollback search (`Cmd+Shift+F`) — palette-style overlay
+  that runs a full-text query against the commands + scrollback tables
+  and jumps to the match in the source pane.
+- [ ] Scrollback export — `napkin export <session>` dumps the raw bytes
+  and/or a JSON record of commands.
+
+### Phase C — agent-era features (1–2 weeks)
+Everything the landing calls out under "agent fleet" and "diff preview."
+
+- [ ] Agent sidebar per pane (optional overlay) with live token count,
+  elapsed time, and cost where the hook script can emit it. Extend the
+  `napkin hook` surface to accept `--tokens N` / `--cost USD` / similar
+  metadata; napkind stores on the session.
+- [ ] Diff preview for agents (`Cmd+Enter`) — the hook script emits a
+  unified diff before apply; napkin renders it in an overlay; accept /
+  reject routes back through the hook.
+- [ ] Worktree-per-agent — a `napkin workspace new <branch>` CLI command
+  that creates a git worktree under `~/napkin/workspaces/<branch>` and
+  spawns a pane inside. Write-lock metadata attached to the session.
+- [ ] Write-locks on panes — a lock flag on a session disables broadcast
+  input targeting it; the lock state is visible in the chrome.
+- [ ] Pause/resume agent via hook verb — `napkin hook pause` sends SIGSTOP
+  to the agent's PTY group; `napkin hook resume` / `kill -CONT`.
+
+### Phase D — remote (1–2 weeks)
+The "SSH without the pain" feature on the landing page.
+
+- [ ] Ship our own terminfo entry (`xterm-napkin`) and install it on the
+  remote on first `napkin ssh`.
+- [ ] `napkin ssh <host>` CLI — spawns `napkind` on the remote if missing,
+  opens a unix-socket-over-ssh tunnel (`ssh -L`), and attaches a new tab
+  to the remote daemon. Every other feature (splits, OSC 133, agent
+  detection) works transparently.
+- [ ] Nested-clipboard correctness — OSC 52 passes through to the host
+  clipboard even across N `ssh` hops.
+
+### Phase E — ship-readiness (3–5 days)
+Only starts once A–D are green.
+
+- [ ] Release build of the Tauri app with `napkind` and `napkin` CLI
+  bundled into `Resources/` via `bundle.externalBin`.
+- [ ] Codesign + notarize (needs an Apple Developer account). Until then,
+  unsigned `.dmg` with README note.
+- [ ] GitHub Actions workflow on `v*` tags, attaches `.dmg` to the
+  release.
+- [ ] Linux static binary + `.deb` / `.rpm` / AppImage built in the same
+  workflow.
+- [ ] Homebrew tap `napkin-term/homebrew-napkin` with a `napkin` formula
+  pointing at the GitHub release assets.
+- [ ] `curl -sSf napkin.sh/install | sh` — an install script hosted on
+  GitHub Pages (or a real `napkin.sh` domain if acquired) that picks the
+  right asset.
+- [ ] `systemd --user` unit so napkind starts with the user session on
+  Linux.
+- [ ] 15-second demo clip embedded in the README hero.
+- [ ] `CHANGELOG.md` opened with the `v0.1.0` entry.
+- [ ] Cut the tag. Publish the release. Update the landing page `v0.4.1
+  beta` string to whatever we actually tag.
 
 ---
 
-## Milestone M2 — `v0.2.0` MCP server (differentiator)
+## Milestone M2 — `v0.2.0` MCP server
 
-**Goal.** Every competing terminal either ignores agents or wraps them.
-napkin can let agents *drive* it: list panes, read output, inject keystrokes,
-spawn siblings, report their own state. No other terminal exposes this.
+Now strictly **post-ship**. Independent of the landing page; a
+differentiator for the next release.
 
-**Acceptance.** `napkin mcp` starts a stdio MCP server. Dropping one line
-into `~/.claude/settings.json` gives Claude Code tools to see and control
-every napkin pane on the machine.
-
-**Tasks.**
-
-1. **napkind read surface.** Add `ClientOp::PaneSnapshot { session_id }` +
-   `ClientOp::PaneList` that return the scrollback ring and metadata. The
-   subscriber fan-out already exists.
-2. **napkind write surface.** `ClientOp::Spawn` already works; add a
-   pane-layout hint (parent session id + split direction) so MCP clients
-   can position new panes relative to existing ones.
-3. **`napkin mcp` subcommand.** Thin MCP server on stdio. Tools:
-   `list_panes`, `pane_read`, `pane_write`, `pane_spawn`, `set_status`.
-   Resources: `pane://active`, `pane://<session_id>` returning recent
-   scrollback as text.
-4. **Capability model.** MCP sessions are auth-less via the socket (anyone
-   on the machine gets in today). Before shipping: require a
-   `NAPKIN_MCP_TOKEN` that the user exports and the MCP client supplies.
-5. **`MCP.md`.** How to wire napkin's MCP server into Claude Code, Cursor,
-   and anything else with MCP support. Worked example.
+- MCP stdio server as a `napkin mcp` subcommand
+- Tools: `list_panes`, `pane_read`, `pane_write`, `pane_spawn`,
+  `set_status`
+- Resources: `pane://active`, `pane://<session_id>`
+- Capability token so the socket isn't anon-auth for MCP clients
+- `MCP.md` with a worked Claude Code config
 
 ---
 
-## Milestone M3 — v2.x rounds (small wins)
+## Milestone M3 — bigger swings
 
-Ordered by user impact per hour of work.
+Everything that's clearly v2+ and doesn't block the landing-page bar.
 
-1. **Global scrollback search** (`Cmd+Shift+F`). Searches every pane's
-   scrollback in the active tab, jumps to the match in the source pane.
-2. **Per-tab color picker.** Right-click a tab → swatch menu → subtle tint.
-   Ghostty wishlist item; cheap; disambiguates prod / staging / local tabs.
-3. **`napkin new-tab <cwd>` / `napkin split`.** CLI entry points that talk
-   to napkind over the socket and tell the active UI to open a new pane.
-   Makes napkin scriptable from project-level shell aliases.
-4. **Settings panel UI.** A Cmd+, overlay with every key from
-   `config.json` editable live; writes the file on change. Eliminates the
-   "where's my config?" question.
-5. **Session TTL in napkind.** When a PTY read returns EOF, mark the
-   session dead; GC after 60 s unless a client is still subscribed. Keeps
-   `napkin list` honest.
-6. **`@xterm/addon-image` validation.** Verify inline images actually
-   render for a few real commands (`img2sixel`, `chafa`, `icat`). Drop the
-   addon if it's silently broken.
-
----
-
-## Milestone M4 — v3 features (quarters, not weeks)
-
-1. **`napkin ssh <host>`.** Spawn `napkind` on the remote, tunnel the unix
-   socket over an ssh `-L` session, attach from the local UI. Ships our
-   terminfo entry on first connect. Closes the tmux-over-ssh gap.
-2. **Devcontainer / docker-exec panes.** `container: <name>` as a pane
-   attribute; napkind `exec`s into the container instead of spawning a
-   login shell. Switch without a command-line ritual.
-3. **Kitty graphics protocol.** Upstream `@xterm/addon-image` covers Sixel
-   and iTerm2; Kitty's is what Ghostty / WezTerm / Konsole standardised on.
-   Either fork the addon or add it behind a feature flag.
-4. **wgpu-native renderer.** Replace xterm.js with a Rust VT parser (fork
-   `alacritty_terminal`) + wgpu surface exposed through a native Tauri
-   window. Target 120fps, <10ms input latency. Biggest lift on the list;
-   unlocks "Electron-perf without the reputation baggage" honestly.
-5. **Windows support.** Deferred deliberately during v1/v2 because every
-   feature we shipped was macOS-tested. Revisit once everything else is in
-   and we have someone who lives on Windows.
-6. **Collab (optional, local-first).** Read-only session observe over
-   Tailscale or ssh. Never mandatory, never a cloud login.
+- **wgpu-native renderer** — replace xterm.js with a Rust VT parser plus
+  a native surface exposed through Tauri. Target 120fps / <10ms input
+  latency. Biggest code lift on the list.
+- **Kitty graphics protocol** — the one image protocol
+  `@xterm/addon-image` doesn't cover.
+- **Windows support** — every feature so far was macOS-tested; Windows
+  needs its own pass on PTYs, signals, paths, and installer.
+- **Collab (optional, local-first)** — read-only session observe over
+  Tailscale/ssh. Never mandatory, never a login wall.
+- **nushell shell integration** — landing currently names `nu` alongside
+  zsh/fish/bash. Either fold into Phase A as a fourth shim or drop from
+  the landing page. **Decision: fold into Phase A.**
 
 ---
 
 ## Ongoing quality
 
-These are continuous; they get picked up alongside the milestones above.
+Picked up alongside the milestones, not blocking any of them.
 
-- **Tests.** Unit tests on the OSC scanner, agent classifier, layout tree
-  operations; integration test that spins a fake daemon + fake client and
-  replays a recorded session.
-- **`CONFIG.md`.** Every key in `config.json` with defaults, types, and
-  worked examples. Link from the README.
-- **Error paths.** Today a daemon crash leaves the UI in a zombie state.
-  Detect EOF on the client's read socket and either auto-reconnect or show
-  a recoverable error.
-- **Accessibility.** Tab stop / focus order in palettes; ARIA labels; a
-  pass in VoiceOver.
-- **Code hygiene.** No `Mutex::lock().unwrap()` reappearing during reviews;
-  doc comments on every public Rust item in `napkin-proto`.
+- **Tests.** Unit tests on the OSC scanner, agent classifier, and layout
+  tree. Integration test that replays a recorded session against a fake
+  daemon.
+- **`CONFIG.md`.** Every key in `config.json` with defaults and worked
+  examples.
+- **Error paths.** Detect EOF on the client's read socket and either
+  auto-reconnect or show a recoverable error (today the UI wedges).
+- **Accessibility.** Focus order in palettes, ARIA labels, VoiceOver pass.
+- **Code hygiene.** No `Mutex::lock().unwrap()` reappearing; doc comments
+  on every public item in `napkin-proto`.
 
 ---
 
-## Ecosystem (not on the critical path, but on the map)
+## Ecosystem (post-M1, on the map)
 
-- **`napkin-vscode`.** VS Code extension that uses the same daemon for VS
-  Code's integrated terminal. Share one scrollback ring between editor and
-  terminal app.
-- **Public `napkin-proto` crate.** Publish to crates.io so third-party hook
-  scripts can link the types directly instead of hand-rolling JSON.
-- **MCP package.** Public npm/pip package that wraps the MCP server for
-  folks who want napkin integration without a working Rust toolchain.
+- `napkin-vscode` extension sharing the daemon with VS Code's integrated
+  terminal
+- Public `napkin-proto` crate on crates.io so third-party hook scripts can
+  link the types directly
+- MCP package on npm/pip for non-Rust integrations
 
 ---
 
-## Out of scope (deliberately)
+## Out of scope
 
-Repeating from before so nobody drifts:
+Unchanged. Here so nobody drifts.
 
-- AI as the core product identity (Warp's position).
-- Mandatory account, login, or cloud backend.
-- Telemetry of command history by default.
-- Closed-source core.
+- AI as the core product identity (Warp's position)
+- Mandatory account, login, or cloud backend
+- Telemetry of command history by default
+- Closed-source core
 
 ---
 
-## Architectural tenets (unchanged)
+## Architectural tenets
 
 1. **Local-first.** No mandatory cloud; all data on device.
-2. **Daemon-centric.** `napkind` owns PTY + session state; UI is disposable.
+2. **Daemon-centric.** `napkind` owns PTY + session state; UI is
+   disposable.
 3. **Out-of-band control plane.** Unix socket + capability tokens; never
    escape-sequence remote control.
 4. **Native hot path.** VT parsing and (once v3 lands) rendering never
    touch the DOM or Node in steady state.
 5. **Discoverable defaults.** Zero-config for 90%; power-user config
    layered on top.
-6. **Every feature earns its place.** Each shipped feature maps to a named
-   pain point from the research. No novelty.
+6. **Every feature earns its place.** Each shipped feature maps to a
+   named pain point from the research. No novelty.
 
 ---
 
-## Next three PRs (as of this update)
+## Immediate next PRs
 
-1. **M1 step 1–2.** Release-build verification + bundling napkind and
-   napkin CLI into the `.app` via `externalBin`.
-2. **M1 step 5.** GitHub Actions workflow that builds the `.dmg` on
-   tag push.
-3. **M1 step 6–8.** Demo clip, changelog, cut `v0.1.0`.
+1. **Phase A step 1** — rebind agent shortcut to `Cmd+J` with
+   jump-to-waiting-agent semantics; palette stays on `Cmd+Shift+A`.
+2. **Phase A step 2** — per-tab color picker, wired to a new `Tab.color`
+   in napkind session metadata.
+3. **Phase A step 3** — `Cmd+↑` / `Cmd+↓` jump between OSC-133 prompt
+   boundaries.
 
-After `v0.1.0` is out, M2 (MCP server) is the next one to pick up.
+After those three, keep going through Phase A, then B, and so on.
