@@ -199,6 +199,23 @@ html, body {
   color: var(--fg-dim);
 }
 
+.napkin-palette-input {
+  appearance: none;
+  margin: 0 12px 4px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.napkin-palette-input:focus {
+  border-color: rgba(245, 167, 66, 0.45);
+}
+
 .napkin-palette-list {
   list-style: none;
   margin: 0;

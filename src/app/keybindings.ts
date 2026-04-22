@@ -11,6 +11,7 @@ export interface KeybindingHandlers {
   readonly resetFontSize: () => void;
   readonly splitActive: (direction: SplitDirection) => void;
   readonly toggleAgentPalette: () => void;
+  readonly togglePanePalette: () => void;
   readonly toggleBroadcast: () => void;
 }
 
@@ -57,6 +58,11 @@ export function registerKeybindings(
     }
     if (key === "a" && event.shiftKey) {
       handlers.toggleAgentPalette();
+      event.preventDefault();
+      return;
+    }
+    if (key === "p" && !event.shiftKey) {
+      handlers.togglePanePalette();
       event.preventDefault();
       return;
     }

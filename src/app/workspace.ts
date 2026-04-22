@@ -3,7 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { ErrorReporter } from "./errors.ts";
 import { onPaneAgent, onPaneCwd, onPaneMark, onPtyExit, onPtyOutput } from "./ipc.ts";
 import { createNotificationGate } from "./notifications.ts";
-import { createAgentPalette, type AgentPaletteEntry } from "./palette.ts";
+import { createPanePalette, type PalettePaneEntry } from "./palette.ts";
 import { registerKeybindings } from "./keybindings.ts";
 import {
   createLeafPane,
@@ -431,6 +431,7 @@ export async function bootWorkspace(
         const outcome: "ok" | "error" = exit === 0 || exit === null ? "ok" : "error";
         setLeafRunState(leaf, outcome);
         scheduleIdle(leaf, COMPLETION_FLASH_MS[outcome]);
+        palette.refresh();
 
         // Notify on agent completion when the user is focused elsewhere.
         // Runs before the Agent(None) event arrives, so leaf.agent is still
@@ -448,14 +449,11 @@ export async function bootWorkspace(
     }
   });
 
-  const palette = createAgentPalette(document, {
-    listEntries: (): AgentPaletteEntry[] => {
-      const entries: AgentPaletteEntry[] = [];
+  const palette = createPanePalette(document, {
+    listEntries: (): PalettePaneEntry[] => {
+      const entries: PalettePaneEntry[] = [];
       for (const tab of state.tabs) {
         forEachLeaf(getTabRoot(tab), (leaf) => {
-          if (!leaf.agent) {
-            return;
-          }
           entries.push({
             tabLabel: tab.customName ?? tab.labelElement.textContent ?? tab.id,
             cwd: leaf.cwd,
@@ -498,6 +496,7 @@ export async function bootWorkspace(
     if (leaf.tab.activeLeaf === leaf) {
       updateTabLabel(leaf.tab);
     }
+    palette.refresh();
   });
 
   await onPtyExit(({ sessionId }) => {
@@ -565,7 +564,8 @@ export async function bootWorkspace(
     splitActive: (direction) => {
       runAsync(() => splitActive(direction), "failed to split pane");
     },
-    toggleAgentPalette: () => palette.toggle(),
+    toggleAgentPalette: () => palette.toggle("agents"),
+    togglePanePalette: () => palette.toggle("all"),
     toggleBroadcast,
   });
 
