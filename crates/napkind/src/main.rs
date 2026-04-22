@@ -42,6 +42,8 @@ fn main() {
     eprintln!("napkind: listening on {}", path.display());
 
     let sessions: SessionMap = Arc::new(Mutex::new(HashMap::new()));
+    let hibernated: Arc<Mutex<HashMap<String, session::HibernatedSession>>> =
+        Arc::new(Mutex::new(HashMap::new()));
     let storage = Arc::new(match Storage::open() {
         Ok(s) => s,
         Err(e) => {
@@ -50,12 +52,34 @@ fn main() {
         }
     });
 
+    // Rehydrate sessions seen in the last 14 days so `napkin list` after a
+    // restart still shows recent work. They don't have live PTYs yet —
+    // Subscribe wakes them up lazily.
+    {
+        let sessions_snapshot = lock_or_recover(&sessions);
+        let mut hib = lock_or_recover(&hibernated);
+        for stored in storage.load_recent_sessions(14 * 24 * 60 * 60 * 1000) {
+            if sessions_snapshot.contains_key(&stored.id) || hib.contains_key(&stored.id) {
+                continue;
+            }
+            hib.insert(
+                stored.id.clone(),
+                session::HibernatedSession { cwd: stored.cwd },
+            );
+        }
+        let count = hib.len();
+        if count > 0 {
+            eprintln!("napkind: rehydrated {count} hibernated session(s) from disk");
+        }
+    }
+
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
                 let sessions = sessions.clone();
+                let hibernated = hibernated.clone();
                 let storage = storage.clone();
-                thread::spawn(move || handle_client(stream, sessions, storage));
+                thread::spawn(move || handle_client(stream, sessions, hibernated, storage));
             }
             Err(e) => {
                 eprintln!("napkind: accept error: {e}");
@@ -64,7 +88,12 @@ fn main() {
     }
 }
 
-fn handle_client(stream: UnixStream, sessions: SessionMap, storage: Arc<Storage>) {
+fn handle_client(
+    stream: UnixStream,
+    sessions: SessionMap,
+    hibernated: Arc<Mutex<HashMap<String, session::HibernatedSession>>>,
+    storage: Arc<Storage>,
+) {
     let (tx, rx) = std::sync::mpsc::channel::<ServerMsg>();
     let read_stream = match stream.try_clone() {
         Ok(s) => s,
@@ -93,7 +122,7 @@ fn handle_client(stream: UnixStream, sessions: SessionMap, storage: Arc<Storage>
         match line {
             Ok(line) if line.is_empty() => continue,
             Ok(line) => match serde_json::from_str::<ClientMsg>(&line) {
-                Ok(msg) => dispatch(msg, &sessions, &tx, &storage),
+                Ok(msg) => dispatch(msg, &sessions, &hibernated, &tx, &storage),
                 Err(e) => {
                     let _ = tx.send(ServerMsg {
                         id: None,
@@ -114,6 +143,7 @@ fn handle_client(stream: UnixStream, sessions: SessionMap, storage: Arc<Storage>
 fn dispatch(
     msg: ClientMsg,
     sessions: &SessionMap,
+    hibernated: &Arc<Mutex<HashMap<String, session::HibernatedSession>>>,
     tx: &std::sync::mpsc::Sender<ServerMsg>,
     storage: &Arc<Storage>,
 ) {
@@ -192,13 +222,19 @@ fn dispatch(
         }
 
         ClientOp::List => {
-            let infos: Vec<SessionInfo> = lock_or_recover(sessions)
+            let mut infos: Vec<SessionInfo> = lock_or_recover(sessions)
                 .iter()
                 .map(|(id, s)| SessionInfo {
                     session_id: id.clone(),
                     cwd: lock_or_recover(s).cwd.clone(),
                 })
                 .collect();
+            for (id, hib) in lock_or_recover(hibernated).iter() {
+                infos.push(SessionInfo {
+                    session_id: id.clone(),
+                    cwd: hib.cwd.clone(),
+                });
+            }
             reply(ServerOp::ListOk { sessions: infos });
         }
 
@@ -255,29 +291,64 @@ fn dispatch(
         }
 
         ClientOp::Subscribe { session_id } => {
-            let Some(session) = lock_or_recover(sessions).get(&session_id).cloned() else {
-                reply(ServerOp::Err {
-                    error: "no such session".into(),
-                });
-                return;
+            // Is it a live session?
+            let live = lock_or_recover(sessions).get(&session_id).cloned();
+            let session = match live {
+                Some(s) => s,
+                None => {
+                    // Is it hibernated — waiting to be resurrected?
+                    let cwd = {
+                        let mut hib = lock_or_recover(hibernated);
+                        hib.remove(&session_id).map(|h| h.cwd)
+                    };
+                    let Some(cwd) = cwd else {
+                        reply(ServerOp::Err {
+                            error: "no such session".into(),
+                        });
+                        return;
+                    };
+                    // Spawn a fresh PTY at the stored cwd and adopt the old
+                    // session id. Any prior scrollback we had on disk gets
+                    // replayed below.
+                    match session::resurrect_session(
+                        session_id.clone(),
+                        cwd,
+                        tx.clone(),
+                        storage.clone(),
+                    ) {
+                        Ok(s) => {
+                            lock_or_recover(sessions).insert(session_id.clone(), s.clone());
+                            s
+                        }
+                        Err(e) => {
+                            reply(ServerOp::Err { error: e });
+                            return;
+                        }
+                    }
+                }
             };
-            let (cwd, scrollback) = {
+            let (cwd, in_memory_scroll) = {
                 let mut s = lock_or_recover(&session);
                 s.subscribers.push(tx.clone());
                 (s.cwd.clone(), s.scrollback.clone())
             };
             reply(ServerOp::Ok);
-            if !scrollback.is_empty() {
+            // Prefer in-memory ring; fall back to whatever SQLite has on
+            // disk (the typical resurrection case).
+            let replay = if !in_memory_scroll.is_empty() {
+                in_memory_scroll
+            } else {
+                storage.load_scrollback(&session_id, session::SCROLLBACK_LIMIT)
+            };
+            if !replay.is_empty() {
                 let _ = tx.send(ServerMsg {
                     id: None,
                     op: ServerOp::Output {
                         session_id: session_id.clone(),
-                        data: scrollback,
+                        data: replay,
                     },
                 });
             }
-            // Hydrate cwd last so the label reflects where the session is now,
-            // not whatever was in the buffered output.
             let _ = tx.send(ServerMsg {
                 id: None,
                 op: ServerOp::Cwd { session_id, cwd },

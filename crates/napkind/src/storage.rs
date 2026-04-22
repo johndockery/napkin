@@ -22,6 +22,15 @@ pub(crate) struct Storage {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // created_at_ms / last_seen_ms will be surfaced in UI soon.
+pub(crate) struct StoredSession {
+    pub id: String,
+    pub cwd: String,
+    pub created_at_ms: i64,
+    pub last_seen_ms: i64,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct StoredCommand {
     pub session_id: String,
     pub cwd: String,
@@ -144,6 +153,61 @@ impl Storage {
                 ],
             );
         });
+    }
+
+    /// Load recent sessions from disk for startup rehydration. Sessions
+    /// whose last_seen is older than `max_age_ms` are skipped so the user
+    /// isn't greeted with a wall of stale tabs from last month.
+    pub fn load_recent_sessions(&self, max_age_ms: i64) -> Vec<StoredSession> {
+        let Ok(guard) = self.conn.lock() else { return Vec::new() };
+        let Some(conn) = guard.as_ref() else { return Vec::new() };
+        let cutoff = now_ms() - max_age_ms;
+        let mut stmt = match conn.prepare(
+            "SELECT id, cwd, created_at, last_seen FROM sessions
+             WHERE last_seen >= ?1 ORDER BY last_seen DESC",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = stmt.query_map(params![cutoff], |row| {
+            Ok(StoredSession {
+                id: row.get(0)?,
+                cwd: row.get(1)?,
+                created_at_ms: row.get(2)?,
+                last_seen_ms: row.get(3)?,
+            })
+        });
+        match rows {
+            Ok(mapped) => mapped.flatten().collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    /// Concatenated scrollback chunks for a session, in order. Reassembles
+    /// whatever survived in SQLite so reattach after a daemon restart still
+    /// shows history.
+    pub fn load_scrollback(&self, session_id: &str, max_bytes: usize) -> Vec<u8> {
+        let Ok(guard) = self.conn.lock() else { return Vec::new() };
+        let Some(conn) = guard.as_ref() else { return Vec::new() };
+        let mut stmt = match conn.prepare(
+            "SELECT data FROM scrollback_chunks
+             WHERE session_id = ?1 ORDER BY offset ASC",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = stmt.query_map(params![session_id], |row| row.get::<_, Vec<u8>>(0));
+        let mut out: Vec<u8> = Vec::new();
+        if let Ok(iter) = rows {
+            for chunk in iter.flatten() {
+                out.extend_from_slice(&chunk);
+            }
+        }
+        if out.len() > max_bytes {
+            let drop = out.len() - max_bytes;
+            out.drain(0..drop);
+        }
+        out
     }
 
     pub fn search_commands(&self, query: &str, limit: u32) -> Vec<StoredCommand> {

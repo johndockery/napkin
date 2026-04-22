@@ -12,6 +12,15 @@ use crate::osc::{OscEvent, OscScanner};
 use crate::shim::{ensure_bash_shim, ensure_fish_shim, ensure_zsh_shim, fish_config_root};
 use crate::storage::{Storage, StoredCommand};
 
+/// Metadata for a session that was seen previously but has no live PTY yet.
+/// Subscribing to one spawns a fresh shell at the stored cwd and promotes
+/// it to a regular live session; the old session id is preserved so history
+/// stays continuous.
+#[derive(Debug, Clone)]
+pub(crate) struct HibernatedSession {
+    pub cwd: String,
+}
+
 /// Maximum PTY bytes retained per session for replay on reattach.
 /// Roughly 2 MB — enough to cover ~10k lines of typical agent output while
 /// keeping the one-shot replay payload under ~10 MB of JSON-encoded bytes.
@@ -51,7 +60,37 @@ impl Session {
     }
 }
 
+pub(crate) fn resurrect_session(
+    session_id: String,
+    cwd: String,
+    initial_subscriber: Sender<ServerMsg>,
+    storage: Arc<Storage>,
+) -> Result<Arc<Mutex<Session>>, String> {
+    let (_, session) = spawn_session_inner(
+        Some(session_id),
+        24,
+        80,
+        Some(cwd),
+        None,
+        initial_subscriber,
+        storage,
+    )?;
+    Ok(session)
+}
+
 pub(crate) fn spawn_session(
+    rows: u16,
+    cols: u16,
+    cwd: Option<String>,
+    shell: Option<String>,
+    initial_subscriber: Sender<ServerMsg>,
+    storage: Arc<Storage>,
+) -> Result<(String, Arc<Mutex<Session>>), String> {
+    spawn_session_inner(None, rows, cols, cwd, shell, initial_subscriber, storage)
+}
+
+fn spawn_session_inner(
+    preassigned_id: Option<String>,
     rows: u16,
     cols: u16,
     cwd: Option<String>,
@@ -74,8 +113,9 @@ pub(crate) fn spawn_session(
         .unwrap_or_else(|| "/bin/zsh".to_string());
 
     // Session id is generated up front so processes inside the PTY can
-    // phone home via `napkin hook ...`.
-    let session_id = uuid::Uuid::new_v4().to_string();
+    // phone home via `napkin hook ...`. A resurrected session reuses the
+    // stored id so cross-restart history stays keyed on a stable value.
+    let session_id = preassigned_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let socket = napkin_proto::socket_path();
 
     let is_zsh = shell.ends_with("/zsh") || shell == "zsh";
