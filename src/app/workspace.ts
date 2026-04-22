@@ -2,6 +2,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type { ErrorReporter } from "./errors.ts";
 import { onPaneAgent, onPaneCwd, onPaneMark, onPtyExit, onPtyOutput } from "./ipc.ts";
+import { createAgentPalette, type AgentPaletteEntry } from "./palette.ts";
 import { registerKeybindings } from "./keybindings.ts";
 import {
   createLeafPane,
@@ -432,6 +433,35 @@ export async function bootWorkspace(
     }
   });
 
+  const palette = createAgentPalette(document, {
+    listEntries: (): AgentPaletteEntry[] => {
+      const entries: AgentPaletteEntry[] = [];
+      for (const tab of state.tabs) {
+        forEachLeaf(getTabRoot(tab), (leaf) => {
+          if (!leaf.agent) {
+            return;
+          }
+          entries.push({
+            tabLabel: tab.customName ?? tab.labelElement.textContent ?? tab.id,
+            cwd: leaf.cwd,
+            agent: leaf.agent,
+            runState: leaf.runState,
+            leaf,
+          });
+        });
+      }
+      return entries;
+    },
+    onSelect: (leaf) => {
+      const tab = leaf.tab;
+      if (state.activeTab !== tab) {
+        activateTab(tab, { focusTerminal: false });
+      }
+      tab.activeLeaf = leaf;
+      focusLeaf(leaf);
+    },
+  });
+
   await onPaneAgent(({ sessionId, agent }) => {
     const leaf = state.leavesBySessionId.get(sessionId);
     if (!leaf || leaf.mountState === "disposed") {
@@ -441,6 +471,7 @@ export async function bootWorkspace(
     if (leaf.tab.activeLeaf === leaf) {
       setTabAgent(leaf.tab, agent);
     }
+    palette.refresh();
   });
 
   await onPaneCwd(({ sessionId, cwd }) => {
@@ -519,6 +550,7 @@ export async function bootWorkspace(
     splitActive: (direction) => {
       runAsync(() => splitActive(direction), "failed to split pane");
     },
+    toggleAgentPalette: () => palette.toggle(),
     toggleBroadcast,
   });
 

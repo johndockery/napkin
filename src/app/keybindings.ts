@@ -10,6 +10,7 @@ export interface KeybindingHandlers {
   readonly openNewTab: () => void;
   readonly resetFontSize: () => void;
   readonly splitActive: (direction: SplitDirection) => void;
+  readonly toggleAgentPalette: () => void;
   readonly toggleBroadcast: () => void;
 }
 
@@ -51,6 +52,11 @@ export function registerKeybindings(
     }
     if (key === "b" && event.shiftKey) {
       handlers.toggleBroadcast();
+      event.preventDefault();
+      return;
+    }
+    if (key === "a" && event.shiftKey) {
+      handlers.toggleAgentPalette();
       event.preventDefault();
       return;
     }
