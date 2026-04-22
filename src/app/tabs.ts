@@ -4,6 +4,7 @@ export interface TabEventHandlers {
   readonly onActivate: () => void;
   readonly onClose: () => void;
   readonly onRenameRequested: () => void;
+  readonly onReorder: (draggedId: string, beforeId: string | null) => void;
 }
 
 export interface TabElements {
@@ -82,6 +83,59 @@ export function bindTabEvents(tab: Tab, handlers: TabEventHandlers): void {
     event.stopPropagation();
     handlers.onRenameRequested();
   });
+
+  tab.element.draggable = true;
+
+  tab.element.addEventListener("dragstart", (event) => {
+    if (!event.dataTransfer) return;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/x-napkin-tab", tab.id);
+    tab.element.classList.add("dragging");
+  });
+
+  tab.element.addEventListener("dragend", () => {
+    tab.element.classList.remove("dragging");
+  });
+
+  tab.element.addEventListener("dragover", (event) => {
+    if (!event.dataTransfer) return;
+    // Only treat this as a reorder when the payload is one of our tabs.
+    const types = Array.from(event.dataTransfer.types);
+    if (!types.includes("application/x-napkin-tab")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    tab.element.classList.add("drop-target");
+  });
+
+  tab.element.addEventListener("dragleave", () => {
+    tab.element.classList.remove("drop-target");
+  });
+
+  tab.element.addEventListener("drop", (event) => {
+    if (!event.dataTransfer) return;
+    const draggedId = event.dataTransfer.getData("application/x-napkin-tab");
+    tab.element.classList.remove("drop-target");
+    if (!draggedId || draggedId === tab.id) return;
+    event.preventDefault();
+
+    // Decide whether to insert before or after the drop target based on
+    // where the cursor fell within the tab's horizontal bounds.
+    const bounds = tab.element.getBoundingClientRect();
+    const dropBeforeThisTab = event.clientX < bounds.left + bounds.width / 2;
+    handlers.onReorder(draggedId, dropBeforeThisTab ? tab.id : nextTabId(tab));
+  });
+}
+
+/**
+ * The id of the tab element immediately after `tab` in the DOM, or null if
+ * `tab` is the last tab before the "new tab" button.
+ */
+function nextTabId(tab: Tab): string | null {
+  const sibling = tab.element.nextElementSibling;
+  if (!sibling || !(sibling instanceof HTMLElement) || !sibling.classList.contains("tab")) {
+    return null;
+  }
+  return sibling.dataset.id ?? null;
 }
 
 export function mountTab(

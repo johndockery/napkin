@@ -267,6 +267,7 @@ export async function bootWorkspace(
       onRenameRequested: () => {
         startTabRename(tab, () => updateTabLabel(tab));
       },
+      onReorder: (draggedId, beforeId) => reorderTab(draggedId, beforeId),
     });
 
     mountTab(tab, elements.tabStrip, elements.newTabButton);
@@ -334,6 +335,24 @@ export async function bootWorkspace(
       const neighbor = state.tabs[Math.max(0, Math.min(index, state.tabs.length - 1))];
       activateTab(neighbor);
     }
+  };
+
+  const reorderTab = (draggedId: string, beforeId: string | null): void => {
+    const from = state.tabs.findIndex((t) => t.id === draggedId);
+    if (from < 0) return;
+    const [tab] = state.tabs.splice(from, 1);
+
+    const targetIndex =
+      beforeId === null
+        ? state.tabs.length
+        : state.tabs.findIndex((t) => t.id === beforeId);
+    const to = targetIndex < 0 ? state.tabs.length : targetIndex;
+    state.tabs.splice(to, 0, tab);
+
+    const anchor = beforeId
+      ? state.tabs.find((t) => t.id === beforeId)?.element ?? null
+      : elements.newTabButton;
+    elements.tabStrip.insertBefore(tab.element, anchor);
   };
 
   const listBroadcastTargets = (tab: Tab): LeafPane[] => {
