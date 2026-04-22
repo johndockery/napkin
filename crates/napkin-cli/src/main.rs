@@ -1,6 +1,7 @@
 //! `napkin` — companion CLI for the napkin terminal.
 
 mod attach;
+mod workspace;
 
 use std::io::Write;
 use std::os::unix::net::UnixStream;
@@ -13,6 +14,7 @@ fn main() -> ExitCode {
     match args.next().as_deref() {
         Some("hook") => hook_cmd(args),
         Some("diff") => diff_cmd(args),
+        Some("workspace") | Some("ws") => workspace::run(args),
         Some("list") | Some("ls") => attach::list(),
         Some("attach") => {
             let Some(session_id) = args.next() else {
@@ -48,6 +50,11 @@ fn print_usage() {
            napkin diff [--file F | --stdin] [--title T]\n\
                                                  submit a unified diff for review;\n\
                                                  exits 0 on accept, 1 on reject\n\
+           napkin workspace new <branch> [--base REF]\n\
+                                                 create a git worktree at\n\
+                                                 .napkin-worktrees/<branch>\n\
+           napkin workspace list\n\
+           napkin workspace rm <name>\n\
            napkin --version                       print version\n\
          \n\
          State values recognised by the UI:\n\
