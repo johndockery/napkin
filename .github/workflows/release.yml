@@ -72,8 +72,8 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: |
           mkdir -p artefacts
-          find src-tauri/target/release/bundle/dmg -name "*.dmg" -exec cp {} artefacts/ \;
-          find src-tauri/target/release/bundle/macos -name "*.app" -maxdepth 2 -exec sh -c '
+          find target/release/bundle/dmg -name "*.dmg" -exec cp {} artefacts/ \;
+          find target/release/bundle/macos -name "*.app" -maxdepth 2 -exec sh -c '
             cd "$(dirname "$1")"
             zip -r -q "$(basename "$1").zip" "$(basename "$1")"
             mv "$(basename "$1").zip" "$OLDPWD/artefacts/"
@@ -83,8 +83,8 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
         run: |
           mkdir -p artefacts
-          find src-tauri/target/release/bundle/deb -name "*.deb" -exec cp {} artefacts/ \;
-          find src-tauri/target/release/bundle/appimage -name "*.AppImage" -exec cp {} artefacts/ \;
+          find target/release/bundle/deb -name "*.deb" -exec cp {} artefacts/ \;
+          find target/release/bundle/appimage -name "*.AppImage" -exec cp {} artefacts/ \;
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
