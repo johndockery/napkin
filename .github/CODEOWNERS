@@ -1,0 +1,34 @@
+# Code owners for napkin.
+#
+# GitHub reads this file and auto-requests review from the matched owners
+# when a PR touches the listed paths. For it to block merges, enable
+# "Require review from Code Owners" in the branch protection rule on main.
+#
+# The last matching pattern wins, so specific paths below override the
+# catch-all at the top.
+
+# Default owner — everything not matched below.
+*                            @johndockery
+
+# Core daemon, wire protocol, companion CLI
+/crates/napkind/             @johndockery
+/crates/napkin-proto/        @johndockery
+/crates/napkin-cli/          @johndockery
+
+# Tauri shell + frontend
+/src-tauri/                  @johndockery
+/src/                        @johndockery
+/index.html                  @johndockery
+/public/                     @johndockery
+
+# CI, release, install, brew
+/.github/                    @johndockery
+/scripts/                    @johndockery
+
+# Landing site + Netlify config
+/site/                       @johndockery
+/netlify.toml                @johndockery
+
+# Docs
+*.md                         @johndockery
+/docs/                       @johndockery
