@@ -15,6 +15,9 @@ dist-ssr
 # Cargo / Rust build artifacts (workspace-level target)
 target/
 
+# Staged sidecars copied in by scripts/bundle-sidecars.sh before tauri build
+src-tauri/binaries/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

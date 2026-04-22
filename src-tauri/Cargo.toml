@@ -1,12 +1,24 @@
 [package]
-name = "napkin"
+# Tauri rejects externalBin sidecars whose name matches this package, so
+# the Tauri crate is napkin-app while the produced bundle is still
+# napkin.app (productName in tauri.conf.json).
+name = "napkin-app"
 version.workspace = true
 edition.workspace = true
-description = "napkin — a sick terminal"
+description = "napkin — a fast, local-first terminal"
 
 [lib]
 name = "napkin_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+# Produce a binary literally named "napkin" regardless of the package name.
+# macOS shows the executable filename as the dock/menu label in dev mode,
+# so the binary needs to be "napkin" even though the package is
+# "napkin-app" (kept distinct so Tauri's sidecar rule doesn't reject the
+# "napkin" CLI sidecar).
+name = "napkin"
+path = "src/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

@@ -80,6 +80,30 @@ Every field is optional; unknown fields are ignored. The font size set
 via `Cmd+=` / `Cmd+-` persists per-user in localStorage and overrides
 the config value.
 
+## Install
+
+**macOS, Apple Silicon or Intel** — once the first release is cut, grab the
+`.dmg` from the [releases page](https://github.com/johndockery/napkin/releases/latest).
+
+```sh
+# Homebrew (requires the tap to be published)
+brew install napkin-term/napkin/napkin
+
+# One-line installer
+curl -fsSL https://napkin.sh/install | sh
+```
+
+**Linux (x86_64)** — same release page produces `.deb` and `.AppImage`.
+
+```sh
+curl -fsSL https://napkin.sh/install | sh
+systemctl --user enable --now napkind   # optional: start napkind at login
+```
+
+> **Codesigning status:** pre-v0.1.0 builds are unsigned. macOS will
+> gatekeep on first launch; right-click the app in Finder → **Open** the
+> first time. A signed + notarized build is the next milestone.
+
 ## Building from source
 
 Prerequisites: Rust stable (1.77+), Node 20+, and one of `bun` / `pnpm` /
@@ -105,6 +129,13 @@ napkin/
 │   └── napkin-cli/           the `napkin` binary (hooks and future CLI)
 ├── src/                      frontend (vanilla-ts + xterm.js)
 │   └── app/                  focused modules (panes, tabs, ipc, …)
+├── scripts/
+│   ├── bundle-sidecars.sh    stages napkind + napkin into the .app
+│   ├── install.sh            curl | sh installer
+│   ├── homebrew/napkin.rb    Cask for the eventual tap
+│   └── systemd/napkind.service Linux user-unit
+├── .github/workflows/release.yml  tag-triggered release bundle
+├── CHANGELOG.md              release notes
 ├── PLAN.md                   product plan and roadmap
 ├── HOOKS.md                  agent hook reference
 └── LANDING.md                landing-page brief (for design tools)

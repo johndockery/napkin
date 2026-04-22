@@ -1,0 +1,18 @@
+[Unit]
+Description=napkind — napkin workspace daemon
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/napkind
+Restart=on-failure
+RestartSec=2
+
+# Daemon is conservative — it listens on a per-user unix socket, touches
+# ~/.local/share/napkin for SQLite state, and runs ptys. No network.
+PrivateTmp=false
+NoNewPrivileges=true
+
+[Install]
+WantedBy=graphical-session.target

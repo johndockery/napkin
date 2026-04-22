@@ -9,8 +9,8 @@ a brief, not as copy — trust the tool to generate the copy from it.
 
 ## One-line pitch (hero)
 
-A sick, fast terminal with built-in workspaces, structured scrollback, and
-agent-awareness. Local-first. Built in Rust.
+A fast, local-first terminal with built-in workspaces, structured
+scrollback, and agent-awareness. Built in Rust.
 
 ## What it is, in one paragraph
 

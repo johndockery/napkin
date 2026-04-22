@@ -2191,7 +2191,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "napkin"
+name = "napkin-app"
 version = "0.1.0"
 dependencies = [
  "napkin-proto",
