@@ -1,0 +1,15 @@
+[package]
+name = "napkind"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "napkind"
+path = "src/main.rs"
+
+[dependencies]
+napkin-proto = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+portable-pty = { workspace = true }
+uuid = { workspace = true }
