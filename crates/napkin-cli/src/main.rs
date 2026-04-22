@@ -1,15 +1,6 @@
-//! `napkin` — the companion CLI for the napkin terminal.
-//!
-//! For now, the only subcommand is `hook`, which reports a semantic state
-//! transition for the pane the CLI is running in. The pane is identified by
-//! the NAPKIN_SESSION_ID env var that napkind exports when spawning a shell.
-//!
-//! Intended wiring, e.g. Claude Code's settings.json:
-//!
-//!   { "hooks": { "Stop": "napkin hook waiting" } }
-//!
-//! This lets the terminal know exactly when the agent is waiting for you,
-//! instead of guessing from output.
+//! `napkin` — companion CLI for the napkin terminal.
+
+mod attach;
 
 use std::io::Write;
 use std::os::unix::net::UnixStream;
@@ -20,24 +11,14 @@ use napkin_proto::{socket_path, ClientMsg, ClientOp};
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
-        Some("hook") => {
-            let state = match args.next() {
-                Some(s) => s,
-                None => {
-                    eprintln!("usage: napkin hook <state> [--agent <name>]");
-                    return ExitCode::from(2);
-                }
+        Some("hook") => hook_cmd(args),
+        Some("list") | Some("ls") => attach::list(),
+        Some("attach") => {
+            let Some(session_id) = args.next() else {
+                eprintln!("usage: napkin attach <session_id>");
+                return ExitCode::from(2);
             };
-            let mut agent: Option<String> = None;
-            while let Some(arg) = args.next() {
-                if arg == "--agent" {
-                    agent = args.next();
-                } else {
-                    eprintln!("napkin: unexpected argument: {arg}");
-                    return ExitCode::from(2);
-                }
-            }
-            run_hook(state, agent)
+            attach::attach(session_id)
         }
         Some("--version") | Some("-V") => {
             println!("napkin {}", env!("CARGO_PKG_VERSION"));
@@ -60,15 +41,34 @@ fn print_usage() {
         "napkin — companion CLI\n\
          \n\
          Usage:\n\
+           napkin list                            list daemon sessions\n\
+           napkin attach <session_id>             attach to a session (Ctrl-\\ to detach)\n\
            napkin hook <state> [--agent <name>]   report a semantic state change\n\
            napkin --version                       print version\n\
          \n\
-         States are free-form strings; the UI recognises:\n\
+         State values recognised by the UI:\n\
            working   waiting   done   error   idle"
     );
 }
 
-fn run_hook(state: String, agent: Option<String>) -> ExitCode {
+fn hook_cmd(mut args: impl Iterator<Item = String>) -> ExitCode {
+    let state = match args.next() {
+        Some(s) => s,
+        None => {
+            eprintln!("usage: napkin hook <state> [--agent <name>]");
+            return ExitCode::from(2);
+        }
+    };
+    let mut agent: Option<String> = None;
+    while let Some(arg) = args.next() {
+        if arg == "--agent" {
+            agent = args.next();
+        } else {
+            eprintln!("napkin: unexpected argument: {arg}");
+            return ExitCode::from(2);
+        }
+    }
+
     let session_id = match std::env::var("NAPKIN_SESSION_ID") {
         Ok(v) if !v.is_empty() => v,
         _ => {
@@ -85,10 +85,7 @@ fn run_hook(state: String, agent: Option<String>) -> ExitCode {
     let mut stream = match UnixStream::connect(&socket) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!(
-                "napkin: connect {} failed: {e}",
-                socket.display()
-            );
+            eprintln!("napkin: connect {} failed: {e}", socket.display());
             return ExitCode::from(1);
         }
     };

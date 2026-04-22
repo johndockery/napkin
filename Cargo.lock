@@ -2153,6 +2153,7 @@ dependencies = [
 name = "napkin-cli"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "napkin-proto",
  "serde",
  "serde_json",
