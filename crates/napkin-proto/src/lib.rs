@@ -40,6 +40,11 @@ pub enum ClientOp {
         session_id: String,
     },
     List,
+    /// Attach the connected client to an existing session's event stream.
+    /// Replies Ok on success or Err if the session no longer exists.
+    Subscribe {
+        session_id: String,
+    },
 }
 
 /// Daemon → client.

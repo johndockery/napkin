@@ -64,6 +64,32 @@ export async function spawnPty(args: PtySpawnArgs): Promise<string> {
   return invoke<string>("pty_spawn", { args });
 }
 
+interface RawPtySessionSummary {
+  readonly session_id: string;
+  readonly cwd: string;
+}
+
+export interface PtySessionSummary {
+  readonly sessionId: string;
+  readonly cwd: string;
+}
+
+export async function listPtySessions(): Promise<PtySessionSummary[]> {
+  const raw = await invoke<RawPtySessionSummary[]>("pty_list");
+  return raw.map((entry) => ({
+    sessionId: entry.session_id,
+    cwd: entry.cwd,
+  }));
+}
+
+export async function subscribePty(
+  sessionId: string,
+  rows: number,
+  cols: number,
+): Promise<void> {
+  await invoke("pty_subscribe", { sessionId, rows, cols });
+}
+
 export async function writePty(
   sessionId: string,
   data: ReadonlyArray<number>,

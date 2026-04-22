@@ -180,6 +180,28 @@ fn dispatch(msg: ClientMsg, sessions: &SessionMap, tx: &std::sync::mpsc::Sender<
                 .collect();
             reply(ServerOp::ListOk { sessions: infos });
         }
+
+        ClientOp::Subscribe { session_id } => {
+            let Some(session) = lock_or_recover(sessions).get(&session_id).cloned() else {
+                reply(ServerOp::Err {
+                    error: "no such session".into(),
+                });
+                return;
+            };
+            let cwd = {
+                let mut s = lock_or_recover(&session);
+                s.subscribers.push(tx.clone());
+                s.cwd.clone()
+            };
+            reply(ServerOp::Ok);
+            // Hydrate the client with the session's current cwd so its tab
+            // label renders correctly on reattach without waiting for the
+            // next prompt mark.
+            let _ = tx.send(ServerMsg {
+                id: None,
+                op: ServerOp::Cwd { session_id, cwd },
+            });
+        }
     }
 }
 
