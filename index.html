@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>napkin</title>
+  </head>
+  <body>
+    <div id="app">
+      <header id="chrome" data-tauri-drag-region>
+        <div class="chrome-left" data-tauri-drag-region></div>
+        <div class="chrome-center" data-tauri-drag-region>
+          <span class="app-name" data-tauri-drag-region>napkin</span>
+          <span class="chrome-sep" data-tauri-drag-region>·</span>
+          <span id="chrome-cwd" data-tauri-drag-region>~</span>
+        </div>
+        <div class="chrome-right" data-tauri-drag-region></div>
+      </header>
+      <main id="term-wrap">
+        <div id="term"></div>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

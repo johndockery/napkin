@@ -1,0 +1,118 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b0c0f;
+  --bg-elev: #121318;
+  --fg: #e6e6e6;
+  --fg-dim: #8a8f98;
+  --border: rgba(255, 255, 255, 0.06);
+  --chrome-h: 32px;
+  --accent: #f5a742;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  width: 100vw;
+  background:
+    radial-gradient(1200px 600px at 50% -200px, rgba(245, 167, 66, 0.05), transparent 60%),
+    var(--bg);
+  overflow: hidden;
+  font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+}
+
+#chrome {
+  height: var(--chrome-h);
+  min-height: var(--chrome-h);
+  display: grid;
+  grid-template-columns: 82px 1fr 82px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  background: rgba(11, 12, 15, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  color: var(--fg-dim);
+}
+
+.chrome-left, .chrome-right { height: 100%; }
+
+/* children are visual only — header is the drag target */
+#chrome * { pointer-events: none; }
+
+.chrome-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.app-name {
+  color: var(--fg);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.chrome-sep { color: var(--border); font-weight: 400; }
+
+#chrome-cwd {
+  color: var(--fg-dim);
+  max-width: 60vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#term-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 8px 0 0 0;
+  display: flex;
+}
+
+#term {
+  flex: 1 1 auto;
+  padding: 10px 14px 10px 14px;
+  min-height: 0;
+  user-select: text;
+}
+
+/* xterm tweaks */
+.xterm {
+  padding: 0;
+  height: 100%;
+}
+
+.xterm .xterm-viewport {
+  background: transparent !important;
+  scrollbar-width: thin;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar { width: 8px; }
+.xterm .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
+.xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+}
+.xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.xterm-selection-layer {
+  opacity: 0.9;
+}
