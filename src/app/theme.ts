@@ -11,9 +11,9 @@ const DEFAULT_FONT_FAMILY = '"JetBrains Mono", "SF Mono", Menlo, monospace';
 const DEFAULT_THEME = {
   background: "rgba(0,0,0,0)",
   foreground: "#e6e6e6",
-  cursor: "#f5a742",
+  cursor: "#b82b23",
   cursorAccent: "#0b0c0f",
-  selectionBackground: "rgba(245, 167, 66, 0.22)",
+  selectionBackground: "rgba(184, 43, 35, 0.22)",
   selectionForeground: "#ffffff",
   black: "#1c1c1c",
   red: "#e06c75",
