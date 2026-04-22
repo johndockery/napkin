@@ -11,6 +11,11 @@ use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use crate::osc::{OscEvent, OscScanner};
 use crate::shim::ensure_zsh_shim;
 
+/// Maximum PTY bytes retained per session for replay on reattach.
+/// Roughly 2 MB — enough to cover ~10k lines of typical agent output while
+/// keeping the one-shot replay payload under ~10 MB of JSON-encoded bytes.
+pub(crate) const SCROLLBACK_LIMIT: usize = 2 * 1024 * 1024;
+
 pub(crate) struct Session {
     pub master: Box<dyn MasterPty + Send>,
     pub writer: Box<dyn Write + Send>,
@@ -19,6 +24,18 @@ pub(crate) struct Session {
     /// Agent classification for the currently-executing foreground command,
     /// or None when idle or running a non-agent command.
     pub current_agent: Option<&'static str>,
+    /// Ring buffer of raw PTY bytes kept for replay when a client reattaches.
+    pub scrollback: Vec<u8>,
+}
+
+impl Session {
+    pub fn append_scrollback(&mut self, data: &[u8]) {
+        self.scrollback.extend_from_slice(data);
+        if self.scrollback.len() > SCROLLBACK_LIMIT {
+            let drop = self.scrollback.len() - SCROLLBACK_LIMIT;
+            self.scrollback.drain(0..drop);
+        }
+    }
 }
 
 pub(crate) fn spawn_session(
@@ -97,6 +114,7 @@ pub(crate) fn spawn_session(
         cwd: start_cwd.clone(),
         subscribers: vec![initial_subscriber],
         current_agent: None,
+        scrollback: Vec::new(),
     }));
 
     // Reader thread
@@ -111,6 +129,10 @@ pub(crate) fn spawn_session(
                 Ok(n) => {
                     let data = buf[..n].to_vec();
                     let events = scanner.feed(&data);
+                    {
+                        let mut s = lock_or_recover(&session_for_reader);
+                        s.append_scrollback(&data);
+                    }
                     broadcast(
                         &session_for_reader,
                         ServerMsg {

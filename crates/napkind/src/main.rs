@@ -223,15 +223,23 @@ fn dispatch(msg: ClientMsg, sessions: &SessionMap, tx: &std::sync::mpsc::Sender<
                 });
                 return;
             };
-            let cwd = {
+            let (cwd, scrollback) = {
                 let mut s = lock_or_recover(&session);
                 s.subscribers.push(tx.clone());
-                s.cwd.clone()
+                (s.cwd.clone(), s.scrollback.clone())
             };
             reply(ServerOp::Ok);
-            // Hydrate the client with the session's current cwd so its tab
-            // label renders correctly on reattach without waiting for the
-            // next prompt mark.
+            if !scrollback.is_empty() {
+                let _ = tx.send(ServerMsg {
+                    id: None,
+                    op: ServerOp::Output {
+                        session_id: session_id.clone(),
+                        data: scrollback,
+                    },
+                });
+            }
+            // Hydrate cwd last so the label reflects where the session is now,
+            // not whatever was in the buffered output.
             let _ = tx.send(ServerMsg {
                 id: None,
                 op: ServerOp::Cwd { session_id, cwd },
