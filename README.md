@@ -1,6 +1,6 @@
 # napkin
 
-A sick, fast terminal with first-class workspaces, structured scrollback,
+A fast terminal with first-class workspaces, structured scrollback,
 and agent-awareness. Rust core + Tauri shell + xterm.js renderer.
 
 Built because tmux has UX debt, Warp has a login wall, and neither
