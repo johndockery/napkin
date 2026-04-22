@@ -105,6 +105,40 @@ html, body {
   letter-spacing: 0.15px;
 }
 
+/* Run-state indicator: transparent when idle, orange pulse while a command
+ * runs, a brief green/red flash after it completes. */
+.tab-status {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: transparent;
+  transition: background 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.tab-status[data-state="running"] {
+  background: var(--accent);
+  box-shadow: 0 0 0 0 rgba(245, 167, 66, 0.6);
+  animation: napkin-pulse 1.4s ease-in-out infinite;
+}
+
+.tab-status[data-state="ok"] {
+  background: #98c379;
+  box-shadow: 0 0 6px rgba(152, 195, 121, 0.55);
+}
+
+.tab-status[data-state="error"] {
+  background: #e06c75;
+  box-shadow: 0 0 6px rgba(224, 108, 117, 0.6);
+}
+
+@keyframes napkin-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(245, 167, 66, 0.55); transform: scale(1); }
+  60%  { box-shadow: 0 0 0 5px rgba(245, 167, 66, 0);  transform: scale(1.08); }
+  100% { box-shadow: 0 0 0 0 rgba(245, 167, 66, 0);    transform: scale(1); }
+}
+
 .tab-close {
   flex-shrink: 0;
   width: 16px;

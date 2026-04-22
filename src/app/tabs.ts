@@ -1,4 +1,4 @@
-import type { Tab } from "./types.ts";
+import type { PaneRunState, Tab } from "./types.ts";
 
 export interface TabEventHandlers {
   readonly onActivate: () => void;
@@ -8,6 +8,7 @@ export interface TabEventHandlers {
 
 export interface TabElements {
   readonly element: HTMLDivElement;
+  readonly statusElement: HTMLSpanElement;
   readonly labelElement: HTMLSpanElement;
   readonly closeButton: HTMLButtonElement;
 }
@@ -16,6 +17,11 @@ export function createTabElements(id: string): TabElements {
   const element = document.createElement("div");
   element.className = "tab";
   element.dataset.id = id;
+
+  const statusElement = document.createElement("span");
+  statusElement.className = "tab-status";
+  statusElement.dataset.state = "idle";
+  statusElement.setAttribute("aria-hidden", "true");
 
   const labelElement = document.createElement("span");
   labelElement.className = "tab-label";
@@ -27,13 +33,18 @@ export function createTabElements(id: string): TabElements {
   closeButton.textContent = "×";
   closeButton.title = "Close tab";
 
-  element.append(labelElement, closeButton);
+  element.append(statusElement, labelElement, closeButton);
 
   return {
     element,
+    statusElement,
     labelElement,
     closeButton,
   };
+}
+
+export function setTabRunState(tab: Tab, state: PaneRunState): void {
+  tab.statusElement.dataset.state = state;
 }
 
 export function bindTabEvents(tab: Tab, handlers: TabEventHandlers): void {

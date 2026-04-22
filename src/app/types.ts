@@ -6,6 +6,9 @@ export type PaneMountState = "new" | "mounting" | "ready" | "disposed";
 export type SplitDirection = "horizontal" | "vertical";
 export type NavigationDirection = "left" | "right" | "up" | "down";
 
+/** Observable state of a pane's current shell activity, driven by OSC 133 marks. */
+export type PaneRunState = "idle" | "running" | "ok" | "error";
+
 export interface LeafPane {
   readonly type: "leaf";
   parent: SplitPane | null;
@@ -19,6 +22,7 @@ export interface LeafPane {
   sessionId: string | null;
   mountState: PaneMountState;
   cwd: string;
+  runState: PaneRunState;
 }
 
 export interface SplitPane {
@@ -40,6 +44,7 @@ export interface Tab {
   readonly id: string;
   readonly element: HTMLDivElement;
   readonly labelElement: HTMLSpanElement;
+  readonly statusElement: HTMLSpanElement;
   readonly closeButton: HTMLButtonElement;
   root: PaneNode | null;
   activeLeaf: LeafPane | null;

@@ -1,7 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type { ErrorReporter } from "./errors.ts";
-import { onPaneCwd, onPtyExit, onPtyOutput } from "./ipc.ts";
+import { onPaneCwd, onPaneMark, onPtyExit, onPtyOutput } from "./ipc.ts";
 import { registerKeybindings } from "./keybindings.ts";
 import {
   createLeafPane,
@@ -15,7 +15,14 @@ import {
   replacePaneInTree,
   setLeafFontSize,
 } from "./panes.ts";
-import { bindTabEvents, createTabElements, mountTab, startTabRename, updateTabLabel } from "./tabs.ts";
+import {
+  bindTabEvents,
+  createTabElements,
+  mountTab,
+  setTabRunState,
+  startTabRename,
+  updateTabLabel,
+} from "./tabs.ts";
 import {
   clampFontSize,
   DEFAULT_FONT_SIZE,
@@ -27,6 +34,7 @@ import type {
   AppState,
   LeafPane,
   NavigationDirection,
+  PaneRunState,
   SplitDirection,
   Tab,
 } from "./types.ts";
@@ -72,6 +80,35 @@ export async function bootWorkspace(
     return leaves;
   };
 
+  // A command-end mark briefly paints the tab ok/error so a quick glance
+  // reveals how the last command finished, then settles back to idle.
+  const COMPLETION_FLASH_MS: Record<"ok" | "error", number> = {
+    ok: 900,
+    error: 3000,
+  };
+  const completionTimers = new WeakMap<LeafPane, number>();
+
+  const setLeafRunState = (leaf: LeafPane, state: PaneRunState): void => {
+    leaf.runState = state;
+    if (leaf.tab.activeLeaf === leaf) {
+      setTabRunState(leaf.tab, state);
+    }
+  };
+
+  const scheduleIdle = (leaf: LeafPane, delayMs: number): void => {
+    const prev = completionTimers.get(leaf);
+    if (prev !== undefined) {
+      window.clearTimeout(prev);
+    }
+    const timer = window.setTimeout(() => {
+      completionTimers.delete(leaf);
+      if (leaf.mountState !== "disposed") {
+        setLeafRunState(leaf, "idle");
+      }
+    }, delayMs);
+    completionTimers.set(leaf, timer);
+  };
+
   const focusLeaf = (
     leaf: LeafPane,
     options: { readonly focusTerminal?: boolean } = {},
@@ -91,6 +128,7 @@ export async function bootWorkspace(
     }
 
     updateTabLabel(tab);
+    setTabRunState(tab, leaf.runState);
   };
 
   const syncBroadcastState = (tab: Tab): void => {
@@ -367,6 +405,29 @@ export async function bootWorkspace(
       return;
     }
     leaf.terminal.write(outputDecoder.decode(new Uint8Array(data)));
+  });
+
+  await onPaneMark(({ sessionId, mark, exit }) => {
+    const leaf = state.leavesBySessionId.get(sessionId);
+    if (!leaf || leaf.mountState === "disposed") {
+      return;
+    }
+
+    switch (mark) {
+      case "A":
+      case "B":
+        setLeafRunState(leaf, "idle");
+        break;
+      case "C":
+        setLeafRunState(leaf, "running");
+        break;
+      case "D": {
+        const outcome: "ok" | "error" = exit === 0 || exit === null ? "ok" : "error";
+        setLeafRunState(leaf, outcome);
+        scheduleIdle(leaf, COMPLETION_FLASH_MS[outcome]);
+        break;
+      }
+    }
   });
 
   await onPaneCwd(({ sessionId, cwd }) => {

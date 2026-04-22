@@ -15,6 +15,12 @@ interface RawPtyExitEvent {
   readonly session_id: string;
 }
 
+interface RawPaneMarkEvent {
+  readonly session_id: string;
+  readonly mark: string;
+  readonly exit?: number | null;
+}
+
 export interface PtySpawnArgs {
   readonly rows: number;
   readonly cols: number;
@@ -34,6 +40,13 @@ export interface PaneCwdEvent {
 
 export interface PtyExitEvent {
   readonly sessionId: string;
+}
+
+/** OSC 133 shell mark. A = prompt, C = command start, D = command end. */
+export interface PaneMarkEvent {
+  readonly sessionId: string;
+  readonly mark: "A" | "B" | "C" | "D";
+  readonly exit: number | null;
 }
 
 export async function spawnPty(args: PtySpawnArgs): Promise<string> {
@@ -87,6 +100,22 @@ export async function onPtyExit(
   return listen<RawPtyExitEvent>("pty-exit", ({ payload }) => {
     handler({
       sessionId: payload.session_id,
+    });
+  });
+}
+
+export async function onPaneMark(
+  handler: (event: PaneMarkEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<RawPaneMarkEvent>("pane-mark", ({ payload }) => {
+    const mark = payload.mark as PaneMarkEvent["mark"];
+    if (mark !== "A" && mark !== "B" && mark !== "C" && mark !== "D") {
+      return;
+    }
+    handler({
+      sessionId: payload.session_id,
+      mark,
+      exit: payload.exit ?? null,
     });
   });
 }
