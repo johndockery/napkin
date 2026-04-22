@@ -181,6 +181,41 @@ fn dispatch(msg: ClientMsg, sessions: &SessionMap, tx: &std::sync::mpsc::Sender<
             reply(ServerOp::ListOk { sessions: infos });
         }
 
+        ClientOp::AgentState {
+            session_id,
+            state,
+            agent,
+        } => {
+            let exists = lock_or_recover(sessions).contains_key(&session_id);
+            if !exists {
+                reply(ServerOp::Err {
+                    error: "no such session".into(),
+                });
+                return;
+            }
+            // Broadcast to every subscriber of this session via the first
+            // one's channel; the session forwarder loop fans it out.
+            let Some(session) = lock_or_recover(sessions).get(&session_id).cloned() else {
+                reply(ServerOp::Err {
+                    error: "no such session".into(),
+                });
+                return;
+            };
+            let msg = ServerMsg {
+                id: None,
+                op: ServerOp::Status {
+                    session_id,
+                    state,
+                    agent,
+                },
+            };
+            {
+                let mut s = lock_or_recover(&session);
+                s.subscribers.retain(|sub| sub.send(msg.clone()).is_ok());
+            }
+            reply(ServerOp::Ok);
+        }
+
         ClientOp::Subscribe { session_id } => {
             let Some(session) = lock_or_recover(sessions).get(&session_id).cloned() else {
                 reply(ServerOp::Err {

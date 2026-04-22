@@ -42,10 +42,28 @@ pub(crate) fn spawn_session(
         .or_else(|| std::env::var("SHELL").ok())
         .unwrap_or_else(|| "/bin/zsh".to_string());
 
+    // Session id is generated up front so processes inside the PTY can
+    // phone home via `napkin hook ...`.
+    let session_id = uuid::Uuid::new_v4().to_string();
+    let socket = napkin_proto::socket_path();
+
     let mut cmd = CommandBuilder::new(&shell);
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("NAPKIN", "1");
+    cmd.env("NAPKIN_SESSION_ID", &session_id);
+    cmd.env("NAPKIN_SOCKET", socket.to_string_lossy().to_string());
+    // Put the napkin CLI on PATH so `napkin hook …` works from within the
+    // spawned shell. The CLI binary lives next to napkind in every build.
+    if let Some(dir) = current_exe_dir() {
+        let existing = std::env::var("PATH").unwrap_or_default();
+        let new_path = if existing.is_empty() {
+            dir.to_string_lossy().to_string()
+        } else {
+            format!("{}:{existing}", dir.to_string_lossy())
+        };
+        cmd.env("PATH", new_path);
+    }
 
     let is_zsh = shell.ends_with("/zsh") || shell == "zsh";
     if is_zsh {
@@ -73,7 +91,6 @@ pub(crate) fn spawn_session(
         .take_writer()
         .map_err(|e| format!("take writer failed: {e}"))?;
 
-    let session_id = uuid::Uuid::new_v4().to_string();
     let session = Arc::new(Mutex::new(Session {
         master: pair.master,
         writer,
@@ -245,6 +262,12 @@ fn classify_agent(command_line: &str) -> Option<&'static str> {
         "gemini" => Some("gemini"),
         _ => None,
     }
+}
+
+fn current_exe_dir() -> Option<std::path::PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(std::path::PathBuf::from))
 }
 
 /// Send a message to every live subscriber; drop any whose channel has closed.

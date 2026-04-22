@@ -2150,6 +2150,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "napkin-cli"
+version = "0.1.0"
+dependencies = [
+ "napkin-proto",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "napkin-proto"
 version = "0.1.0"
 dependencies = [

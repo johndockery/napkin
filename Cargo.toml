@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "src-tauri",
   "crates/napkin-proto",
+  "crates/napkin-cli",
   "crates/napkind",
 ]
 default-members = ["src-tauri"]

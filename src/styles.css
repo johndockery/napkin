@@ -123,6 +123,12 @@ html, body {
   animation: napkin-pulse 1.4s ease-in-out infinite;
 }
 
+.tab-status[data-state="waiting"] {
+  background: #e5c07b;
+  box-shadow: 0 0 0 0 rgba(229, 192, 123, 0.7);
+  animation: napkin-waiting-pulse 1.8s ease-in-out infinite;
+}
+
 .tab-status[data-state="ok"] {
   background: #98c379;
   box-shadow: 0 0 6px rgba(152, 195, 121, 0.55);
@@ -131,6 +137,12 @@ html, body {
 .tab-status[data-state="error"] {
   background: #e06c75;
   box-shadow: 0 0 6px rgba(224, 108, 117, 0.6);
+}
+
+@keyframes napkin-waiting-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(229, 192, 123, 0.6); }
+  60%  { box-shadow: 0 0 0 6px rgba(229, 192, 123, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(229, 192, 123, 0); }
 }
 
 @keyframes napkin-pulse {

@@ -6,8 +6,17 @@ export type PaneMountState = "new" | "mounting" | "ready" | "disposed";
 export type SplitDirection = "horizontal" | "vertical";
 export type NavigationDirection = "left" | "right" | "up" | "down";
 
-/** Observable state of a pane's current shell activity, driven by OSC 133 marks. */
-export type PaneRunState = "idle" | "running" | "ok" | "error";
+/**
+ * Observable state of a pane. Set implicitly by OSC 133 marks or explicitly
+ * by an agent hook (`napkin hook <state>`), which overrides the inferred
+ * state until the next transition.
+ */
+export type PaneRunState =
+  | "idle"
+  | "running"
+  | "waiting"
+  | "ok"
+  | "error";
 
 export interface LeafPane {
   readonly type: "leaf";

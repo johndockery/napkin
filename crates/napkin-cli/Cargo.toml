@@ -1,0 +1,13 @@
+[package]
+name = "napkin-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "napkin"
+path = "src/main.rs"
+
+[dependencies]
+napkin-proto = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

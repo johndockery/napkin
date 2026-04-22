@@ -1,7 +1,14 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type { ErrorReporter } from "./errors.ts";
-import { onPaneAgent, onPaneCwd, onPaneMark, onPtyExit, onPtyOutput } from "./ipc.ts";
+import {
+  onPaneAgent,
+  onPaneCwd,
+  onPaneMark,
+  onPaneStatus,
+  onPtyExit,
+  onPtyOutput,
+} from "./ipc.ts";
 import { createNotificationGate } from "./notifications.ts";
 import { createPanePalette, type PalettePaneEntry } from "./palette.ts";
 import { registerKeybindings } from "./keybindings.ts";
@@ -44,6 +51,33 @@ import type {
 import { getTabRoot } from "./types.ts";
 
 const outputDecoder = new TextDecoder();
+
+/**
+ * Agent hooks send free-form state strings; map them to the UI's state
+ * enum. Unknown states collapse to "idle".
+ */
+function normalizeStatusState(raw: string): PaneRunState {
+  switch (raw.toLowerCase()) {
+    case "working":
+    case "running":
+    case "thinking":
+      return "running";
+    case "waiting":
+    case "waiting_input":
+    case "needs_input":
+      return "waiting";
+    case "done":
+    case "ok":
+    case "completed":
+      return "ok";
+    case "error":
+    case "errored":
+    case "failed":
+      return "error";
+    default:
+      return "idle";
+  }
+}
 
 export async function bootWorkspace(
   elements: AppElements,
@@ -473,6 +507,32 @@ export async function bootWorkspace(
       tab.activeLeaf = leaf;
       focusLeaf(leaf);
     },
+  });
+
+  await onPaneStatus((event) => {
+    const leaf = state.leavesBySessionId.get(event.sessionId);
+    if (!leaf || leaf.mountState === "disposed") {
+      return;
+    }
+    const normalized = normalizeStatusState(event.state);
+    if (event.agent !== null) {
+      leaf.agent = event.agent;
+      if (leaf.tab.activeLeaf === leaf) {
+        setTabAgent(leaf.tab, event.agent);
+      }
+    }
+    setLeafRunState(leaf, normalized);
+    if (normalized === "waiting") {
+      const tabLabel =
+        leaf.tab.customName ??
+        leaf.tab.labelElement.textContent ??
+        leaf.tab.id;
+      notifications.notifyBackground({
+        title: `${leaf.agent ?? "agent"} is waiting`,
+        body: `${tabLabel} · ${leaf.cwd}`,
+      });
+    }
+    palette.refresh();
   });
 
   await onPaneAgent(({ sessionId, agent }) => {

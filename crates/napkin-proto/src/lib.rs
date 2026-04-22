@@ -45,6 +45,15 @@ pub enum ClientOp {
     Subscribe {
         session_id: String,
     },
+    /// Explicit semantic state update, typically from an in-shell agent hook
+    /// (e.g., Claude Code's Stop hook). Overrides whatever the daemon would
+    /// otherwise infer from OSC 133 marks, until the next explicit update.
+    AgentState {
+        session_id: String,
+        state: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent: Option<String>,
+    },
 }
 
 /// Daemon → client.
@@ -94,6 +103,14 @@ pub enum ServerOp {
     /// agent, or cleared (when `agent` is `None`).
     Agent {
         session_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent: Option<String>,
+    },
+    /// Semantic state update broadcast from an explicit agent hook or from
+    /// internal state transitions.
+    Status {
+        session_id: String,
+        state: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         agent: Option<String>,
     },

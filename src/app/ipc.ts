@@ -26,6 +26,12 @@ interface RawPaneAgentEvent {
   readonly agent?: string | null;
 }
 
+interface RawPaneStatusEvent {
+  readonly session_id: string;
+  readonly state: string;
+  readonly agent?: string | null;
+}
+
 export interface PtySpawnArgs {
   readonly rows: number;
   readonly cols: number;
@@ -57,6 +63,13 @@ export interface PaneMarkEvent {
 /** The foreground command on a pane has been classified (or cleared). */
 export interface PaneAgentEvent {
   readonly sessionId: string;
+  readonly agent: string | null;
+}
+
+/** Explicit semantic state update, usually from an agent hook. */
+export interface PaneStatusEvent {
+  readonly sessionId: string;
+  readonly state: string;
   readonly agent: string | null;
 }
 
@@ -163,6 +176,18 @@ export async function onPaneAgent(
   return listen<RawPaneAgentEvent>("pane-agent", ({ payload }) => {
     handler({
       sessionId: payload.session_id,
+      agent: payload.agent ?? null,
+    });
+  });
+}
+
+export async function onPaneStatus(
+  handler: (event: PaneStatusEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<RawPaneStatusEvent>("pane-status", ({ payload }) => {
+    handler({
+      sessionId: payload.session_id,
+      state: payload.state,
       agent: payload.agent ?? null,
     });
   });
