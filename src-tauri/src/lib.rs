@@ -10,6 +10,7 @@ use tauri::Manager;
 use crate::client::{start_client, Client};
 use crate::commands::{
     open_in_editor, pty_kill, pty_list, pty_resize, pty_spawn, pty_subscribe, pty_write,
+    search_history,
 };
 use crate::config::load_config;
 
@@ -41,6 +42,7 @@ pub fn run() {
             pty_subscribe,
             load_config,
             open_in_editor,
+            search_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running napkin");

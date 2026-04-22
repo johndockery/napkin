@@ -1,6 +1,6 @@
 //! Tauri command handlers. These preserve the existing invoke surface exactly.
 
-use napkin_proto::{ClientOp, ServerOp, SessionInfo};
+use napkin_proto::{ClientOp, HistoryMatch, ServerOp, SessionInfo};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -80,6 +80,44 @@ pub(crate) fn pty_resize(
 pub(crate) fn pty_kill(client: State<'_, Client>, session_id: String) -> Result<(), String> {
     match client.request(ClientOp::Kill { session_id })? {
         ServerOp::Ok => Ok(()),
+        ServerOp::Err { error } => Err(error),
+        other => Err(format!("unexpected reply: {other:?}")),
+    }
+}
+
+#[derive(Serialize)]
+pub(crate) struct HistoryEntry {
+    session_id: String,
+    cwd: String,
+    cmd: String,
+    started_at_ms: i64,
+    ended_at_ms: Option<i64>,
+    exit_code: Option<i32>,
+}
+
+impl From<HistoryMatch> for HistoryEntry {
+    fn from(m: HistoryMatch) -> Self {
+        Self {
+            session_id: m.session_id,
+            cwd: m.cwd,
+            cmd: m.cmd,
+            started_at_ms: m.started_at_ms,
+            ended_at_ms: m.ended_at_ms,
+            exit_code: m.exit_code,
+        }
+    }
+}
+
+#[tauri::command]
+pub(crate) fn search_history(
+    client: State<'_, Client>,
+    query: String,
+    limit: Option<u32>,
+) -> Result<Vec<HistoryEntry>, String> {
+    match client.request(ClientOp::SearchHistory { query, limit })? {
+        ServerOp::HistoryResults { matches } => {
+            Ok(matches.into_iter().map(Into::into).collect())
+        }
         ServerOp::Err { error } => Err(error),
         other => Err(format!("unexpected reply: {other:?}")),
     }

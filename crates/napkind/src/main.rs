@@ -5,6 +5,7 @@
 mod osc;
 mod session;
 mod shim;
+mod storage;
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
@@ -12,10 +13,13 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 
-use napkin_proto::{socket_path, ClientMsg, ClientOp, ServerMsg, ServerOp, SessionInfo};
+use napkin_proto::{
+    socket_path, ClientMsg, ClientOp, HistoryMatch, ServerMsg, ServerOp, SessionInfo,
+};
 use portable_pty::PtySize;
 
 use session::{spawn_session, Session};
+use storage::Storage;
 
 type SessionMap = Arc<Mutex<HashMap<String, Arc<Mutex<Session>>>>>;
 
@@ -38,12 +42,20 @@ fn main() {
     eprintln!("napkind: listening on {}", path.display());
 
     let sessions: SessionMap = Arc::new(Mutex::new(HashMap::new()));
+    let storage = Arc::new(match Storage::open() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("napkind: storage open failed: {e} — persistence disabled");
+            Storage::disconnected()
+        }
+    });
 
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
                 let sessions = sessions.clone();
-                thread::spawn(move || handle_client(stream, sessions));
+                let storage = storage.clone();
+                thread::spawn(move || handle_client(stream, sessions, storage));
             }
             Err(e) => {
                 eprintln!("napkind: accept error: {e}");
@@ -52,7 +64,7 @@ fn main() {
     }
 }
 
-fn handle_client(stream: UnixStream, sessions: SessionMap) {
+fn handle_client(stream: UnixStream, sessions: SessionMap, storage: Arc<Storage>) {
     let (tx, rx) = std::sync::mpsc::channel::<ServerMsg>();
     let read_stream = match stream.try_clone() {
         Ok(s) => s,
@@ -81,7 +93,7 @@ fn handle_client(stream: UnixStream, sessions: SessionMap) {
         match line {
             Ok(line) if line.is_empty() => continue,
             Ok(line) => match serde_json::from_str::<ClientMsg>(&line) {
-                Ok(msg) => dispatch(msg, &sessions, &tx),
+                Ok(msg) => dispatch(msg, &sessions, &tx, &storage),
                 Err(e) => {
                     let _ = tx.send(ServerMsg {
                         id: None,
@@ -99,7 +111,12 @@ fn handle_client(stream: UnixStream, sessions: SessionMap) {
     let _ = writer_thread.join();
 }
 
-fn dispatch(msg: ClientMsg, sessions: &SessionMap, tx: &std::sync::mpsc::Sender<ServerMsg>) {
+fn dispatch(
+    msg: ClientMsg,
+    sessions: &SessionMap,
+    tx: &std::sync::mpsc::Sender<ServerMsg>,
+    storage: &Arc<Storage>,
+) {
     let id = msg.id;
     let reply = |op: ServerOp| {
         let _ = tx.send(ServerMsg { id, op });
@@ -113,8 +130,12 @@ fn dispatch(msg: ClientMsg, sessions: &SessionMap, tx: &std::sync::mpsc::Sender<
             cols,
             cwd,
             shell,
-        } => match spawn_session(rows, cols, cwd, shell, tx.clone()) {
+        } => match spawn_session(rows, cols, cwd, shell, tx.clone(), storage.clone()) {
             Ok((sid, session)) => {
+                {
+                    let cwd = lock_or_recover(&session).cwd.clone();
+                    storage.record_session(&sid, &cwd);
+                }
                 lock_or_recover(sessions).insert(sid.clone(), session);
                 reply(ServerOp::SpawnOk { session_id: sid });
             }
@@ -179,6 +200,23 @@ fn dispatch(msg: ClientMsg, sessions: &SessionMap, tx: &std::sync::mpsc::Sender<
                 })
                 .collect();
             reply(ServerOp::ListOk { sessions: infos });
+        }
+
+        ClientOp::SearchHistory { query, limit } => {
+            let limit = limit.unwrap_or(200).min(1000);
+            let rows = storage.search_commands(&query, limit);
+            let matches: Vec<HistoryMatch> = rows
+                .into_iter()
+                .map(|r| HistoryMatch {
+                    session_id: r.session_id,
+                    cwd: r.cwd,
+                    cmd: r.cmd,
+                    started_at_ms: r.started_at_ms,
+                    ended_at_ms: r.ended_at_ms,
+                    exit_code: r.exit_code,
+                })
+                .collect();
+            reply(ServerOp::HistoryResults { matches });
         }
 
         ClientOp::AgentState {

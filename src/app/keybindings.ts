@@ -14,6 +14,7 @@ export interface KeybindingHandlers {
   readonly togglePanePalette: () => void;
   readonly toggleBroadcast: () => void;
   readonly toggleSearch: () => void;
+  readonly toggleHistorySearch: () => void;
   readonly findNextInPane: () => void;
   readonly findPreviousInPane: () => void;
   readonly toggleHelp: () => void;
@@ -81,6 +82,11 @@ export function registerKeybindings(
     }
     if (key === "f" && !event.shiftKey) {
       handlers.toggleSearch();
+      event.preventDefault();
+      return;
+    }
+    if (key === "f" && event.shiftKey) {
+      handlers.toggleHistorySearch();
       event.preventDefault();
       return;
     }

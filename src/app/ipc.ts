@@ -115,6 +115,22 @@ export async function subscribePty(
   await invoke("pty_subscribe", { sessionId, rows, cols });
 }
 
+export interface HistoryEntry {
+  readonly session_id: string;
+  readonly cwd: string;
+  readonly cmd: string;
+  readonly started_at_ms: number;
+  readonly ended_at_ms: number | null;
+  readonly exit_code: number | null;
+}
+
+export async function searchHistory(
+  query: string,
+  limit: number | null = null,
+): Promise<HistoryEntry[]> {
+  return invoke<HistoryEntry[]>("search_history", { query, limit });
+}
+
 export async function writePty(
   sessionId: string,
   data: ReadonlyArray<number>,

@@ -42,6 +42,7 @@ const SECTIONS: readonly Section[] = [
       { keys: "⌘J", description: "Jump to next waiting agent" },
       { keys: "⌘⇧A", description: "Agent palette" },
       { keys: "⌘F", description: "Search within pane" },
+      { keys: "⌘⇧F", description: "Search command history (cross-session)" },
       { keys: "⌘G / ⌘⇧G", description: "Next / previous match" },
       { keys: "⌘↑ / ⌘↓", description: "Jump between prompts in the pane" },
       { keys: "⌘⇧M", description: "Bookmark current scrollback position" },

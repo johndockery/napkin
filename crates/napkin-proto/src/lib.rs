@@ -54,6 +54,13 @@ pub enum ClientOp {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         agent: Option<String>,
     },
+    /// Full-text search across the daemon's persisted command history.
+    /// The match is substring against the command text for now.
+    SearchHistory {
+        query: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<u32>,
+    },
 }
 
 /// Daemon → client.
@@ -114,6 +121,22 @@ pub enum ServerOp {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         agent: Option<String>,
     },
+    /// Reply to SearchHistory: every command matching the query, newest first.
+    HistoryResults {
+        matches: Vec<HistoryMatch>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistoryMatch {
+    pub session_id: String,
+    pub cwd: String,
+    pub cmd: String,
+    pub started_at_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended_at_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

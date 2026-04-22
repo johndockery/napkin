@@ -15,6 +15,7 @@ import { createNotificationGate } from "./notifications.ts";
 import { createCommandPalette, type CommandEntry } from "./commands.ts";
 import { applyTabColor, openTabColorMenu } from "./tab-colors.ts";
 import { createHelpOverlay } from "./help.ts";
+import { createHistoryPalette } from "./history-palette.ts";
 import { createPanePalette, type PalettePaneEntry } from "./palette.ts";
 import { createSearchController } from "./search.ts";
 import { registerKeybindings } from "./keybindings.ts";
@@ -135,6 +136,7 @@ export async function bootWorkspace(
   });
 
   const help = createHelpOverlay(document);
+  const historyPalette = createHistoryPalette(document);
 
   const commandPalette = createCommandPalette(document, {
     listCommands: (): CommandEntry[] => [
@@ -249,6 +251,13 @@ export async function bootWorkspace(
         title: "Search within pane",
         shortcut: "⌘F",
         run: () => search.toggle(),
+      },
+      {
+        id: "search-history",
+        category: "Navigate",
+        title: "Search command history",
+        shortcut: "⌘⇧F",
+        run: () => historyPalette.toggle(),
       },
       {
         id: "font-bigger",
@@ -954,6 +963,7 @@ export async function bootWorkspace(
     togglePanePalette: () => palette.toggle("all"),
     toggleBroadcast,
     toggleSearch: () => search.toggle(),
+    toggleHistorySearch: () => historyPalette.toggle(),
     findNextInPane: () => search.findNext(),
     findPreviousInPane: () => search.findPrevious(),
     toggleHelp: () => help.toggle(),

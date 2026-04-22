@@ -13,3 +13,4 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 portable-pty = { workspace = true }
 uuid = { workspace = true }
+rusqlite = { version = "0.31", features = ["bundled"] }
