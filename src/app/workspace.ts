@@ -14,6 +14,7 @@ import {
 import { createNotificationGate } from "./notifications.ts";
 import { createCommandPalette, type CommandEntry } from "./commands.ts";
 import { applyTabColor, openTabColorMenu } from "./tab-colors.ts";
+import { createDiffOverlay } from "./diff-overlay.ts";
 import { createHelpOverlay } from "./help.ts";
 import { createHistoryPalette } from "./history-palette.ts";
 import { createPanePalette, type PalettePaneEntry } from "./palette.ts";
@@ -137,6 +138,7 @@ export async function bootWorkspace(
 
   const help = createHelpOverlay(document);
   const historyPalette = createHistoryPalette(document);
+  await createDiffOverlay(document);
 
   const commandPalette = createCommandPalette(document, {
     listCommands: (): CommandEntry[] => [

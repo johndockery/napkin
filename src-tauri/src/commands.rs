@@ -109,6 +109,19 @@ impl From<HistoryMatch> for HistoryEntry {
 }
 
 #[tauri::command]
+pub(crate) fn diff_decide(
+    client: State<'_, Client>,
+    diff_id: String,
+    accepted: bool,
+) -> Result<(), String> {
+    match client.request(ClientOp::DiffDecision { diff_id, accepted })? {
+        ServerOp::Ok => Ok(()),
+        ServerOp::Err { error } => Err(error),
+        other => Err(format!("unexpected reply: {other:?}")),
+    }
+}
+
+#[tauri::command]
 pub(crate) fn search_history(
     client: State<'_, Client>,
     query: String,

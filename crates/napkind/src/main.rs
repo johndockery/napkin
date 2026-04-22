@@ -22,6 +22,9 @@ use session::{spawn_session, Session};
 use storage::Storage;
 
 type SessionMap = Arc<Mutex<HashMap<String, Arc<Mutex<Session>>>>>;
+/// diff_id → (cli's reply channel, cli's request id). Set on DiffPreview,
+/// drained on DiffDecision.
+type DiffWaiters = Arc<Mutex<HashMap<String, (std::sync::mpsc::Sender<ServerMsg>, Option<u64>)>>>;
 
 fn main() {
     let path = socket_path();
@@ -44,6 +47,7 @@ fn main() {
     let sessions: SessionMap = Arc::new(Mutex::new(HashMap::new()));
     let hibernated: Arc<Mutex<HashMap<String, session::HibernatedSession>>> =
         Arc::new(Mutex::new(HashMap::new()));
+    let diff_waiters: DiffWaiters = Arc::new(Mutex::new(HashMap::new()));
     let storage = Arc::new(match Storage::open() {
         Ok(s) => s,
         Err(e) => {
@@ -79,7 +83,10 @@ fn main() {
                 let sessions = sessions.clone();
                 let hibernated = hibernated.clone();
                 let storage = storage.clone();
-                thread::spawn(move || handle_client(stream, sessions, hibernated, storage));
+                let diff_waiters = diff_waiters.clone();
+                thread::spawn(move || {
+                    handle_client(stream, sessions, hibernated, storage, diff_waiters)
+                });
             }
             Err(e) => {
                 eprintln!("napkind: accept error: {e}");
@@ -93,6 +100,7 @@ fn handle_client(
     sessions: SessionMap,
     hibernated: Arc<Mutex<HashMap<String, session::HibernatedSession>>>,
     storage: Arc<Storage>,
+    diff_waiters: DiffWaiters,
 ) {
     let (tx, rx) = std::sync::mpsc::channel::<ServerMsg>();
     let read_stream = match stream.try_clone() {
@@ -122,7 +130,7 @@ fn handle_client(
         match line {
             Ok(line) if line.is_empty() => continue,
             Ok(line) => match serde_json::from_str::<ClientMsg>(&line) {
-                Ok(msg) => dispatch(msg, &sessions, &hibernated, &tx, &storage),
+                Ok(msg) => dispatch(msg, &sessions, &hibernated, &tx, &storage, &diff_waiters),
                 Err(e) => {
                     let _ = tx.send(ServerMsg {
                         id: None,
@@ -146,6 +154,7 @@ fn dispatch(
     hibernated: &Arc<Mutex<HashMap<String, session::HibernatedSession>>>,
     tx: &std::sync::mpsc::Sender<ServerMsg>,
     storage: &Arc<Storage>,
+    diff_waiters: &DiffWaiters,
 ) {
     let id = msg.id;
     let reply = |op: ServerOp| {
@@ -236,6 +245,51 @@ fn dispatch(
                 });
             }
             reply(ServerOp::ListOk { sessions: infos });
+        }
+
+        ClientOp::DiffPreview {
+            session_id,
+            diff_id,
+            diff,
+            title,
+        } => {
+            let Some(session) = lock_or_recover(sessions).get(&session_id).cloned() else {
+                reply(ServerOp::Err {
+                    error: "no such session".into(),
+                });
+                return;
+            };
+            // Park the CLI's reply channel — we'll send DiffResolved back
+            // with its original request id once a UI client decides.
+            lock_or_recover(diff_waiters).insert(diff_id.clone(), (tx.clone(), id));
+            let prompt = ServerMsg {
+                id: None,
+                op: ServerOp::DiffPrompt {
+                    session_id,
+                    diff_id,
+                    diff,
+                    title,
+                },
+            };
+            {
+                let mut s = lock_or_recover(&session);
+                s.subscribers.retain(|sub| sub.send(prompt.clone()).is_ok());
+            }
+            // Don't reply here — we wait for DiffDecision.
+        }
+
+        ClientOp::DiffDecision { diff_id, accepted } => {
+            let waiter = lock_or_recover(diff_waiters).remove(&diff_id);
+            if let Some((waiter_tx, waiter_id)) = waiter {
+                let _ = waiter_tx.send(ServerMsg {
+                    id: waiter_id,
+                    op: ServerOp::DiffResolved {
+                        diff_id,
+                        accepted,
+                    },
+                });
+            }
+            reply(ServerOp::Ok);
         }
 
         ClientOp::SearchHistory { query, limit } => {

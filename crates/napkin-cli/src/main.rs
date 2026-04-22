@@ -12,6 +12,7 @@ fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         Some("hook") => hook_cmd(args),
+        Some("diff") => diff_cmd(args),
         Some("list") | Some("ls") => attach::list(),
         Some("attach") => {
             let Some(session_id) = args.next() else {
@@ -43,12 +44,140 @@ fn print_usage() {
          Usage:\n\
            napkin list                            list daemon sessions\n\
            napkin attach <session_id>             attach to a session (Ctrl-\\ to detach)\n\
-           napkin hook <state> [--agent <name>]   report a semantic state change\n\
+           napkin hook <state> [--agent NAME] [--tokens N] [--cost USD]\n\
+           napkin diff [--file F | --stdin] [--title T]\n\
+                                                 submit a unified diff for review;\n\
+                                                 exits 0 on accept, 1 on reject\n\
            napkin --version                       print version\n\
          \n\
          State values recognised by the UI:\n\
            working   waiting   done   error   idle"
     );
+}
+
+fn diff_cmd(mut args: impl Iterator<Item = String>) -> ExitCode {
+    use std::io::Read;
+
+    let session_id = match std::env::var("NAPKIN_SESSION_ID") {
+        Ok(v) if !v.is_empty() => v,
+        _ => {
+            eprintln!("napkin: NAPKIN_SESSION_ID is not set; not running inside a napkin pane?");
+            return ExitCode::from(1);
+        }
+    };
+
+    let mut source: Option<DiffSource> = None;
+    let mut title: Option<String> = None;
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--file" => {
+                let Some(path) = args.next() else {
+                    eprintln!("napkin: --file requires a path");
+                    return ExitCode::from(2);
+                };
+                source = Some(DiffSource::File(path));
+            }
+            "--stdin" => source = Some(DiffSource::Stdin),
+            "--title" => title = args.next(),
+            _ => {
+                eprintln!("napkin: unexpected argument: {arg}");
+                return ExitCode::from(2);
+            }
+        }
+    }
+
+    let diff_text = match source.unwrap_or(DiffSource::Stdin) {
+        DiffSource::File(path) => match std::fs::read_to_string(&path) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("napkin: read {path}: {e}");
+                return ExitCode::from(1);
+            }
+        },
+        DiffSource::Stdin => {
+            let mut buf = String::new();
+            if let Err(e) = std::io::stdin().read_to_string(&mut buf) {
+                eprintln!("napkin: read stdin: {e}");
+                return ExitCode::from(1);
+            }
+            buf
+        }
+    };
+
+    let socket = std::env::var("NAPKIN_SOCKET")
+        .ok()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(socket_path);
+
+    let mut stream = match UnixStream::connect(&socket) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("napkin: connect {} failed: {e}", socket.display());
+            return ExitCode::from(1);
+        }
+    };
+    let read_stream = match stream.try_clone() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("napkin: clone: {e}");
+            return ExitCode::from(1);
+        }
+    };
+
+    let diff_id = format!("diff-{}", std::process::id());
+    let req_id: u64 = 1;
+    let msg = napkin_proto::ClientMsg {
+        id: Some(req_id),
+        op: napkin_proto::ClientOp::DiffPreview {
+            session_id,
+            diff_id: diff_id.clone(),
+            diff: diff_text,
+            title,
+        },
+    };
+    let line = match serde_json::to_string(&msg) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("napkin: encode failed: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    if let Err(e) = writeln!(stream, "{line}") {
+        eprintln!("napkin: write failed: {e}");
+        return ExitCode::from(1);
+    }
+
+    // Wait for the resolution keyed to our request id.
+    use std::io::{BufRead, BufReader};
+    let reader = BufReader::new(read_stream);
+    for line in reader.lines() {
+        let Ok(line) = line else { break };
+        let Ok(reply) = serde_json::from_str::<napkin_proto::ServerMsg>(&line) else {
+            continue;
+        };
+        if reply.id != Some(req_id) {
+            continue;
+        }
+        if let napkin_proto::ServerOp::DiffResolved { accepted, .. } = reply.op {
+            if accepted {
+                println!("accepted");
+                return ExitCode::SUCCESS;
+            } else {
+                println!("rejected");
+                return ExitCode::from(1);
+            }
+        }
+        if let napkin_proto::ServerOp::Err { error } = reply.op {
+            eprintln!("napkin: {error}");
+            return ExitCode::from(1);
+        }
+    }
+    ExitCode::from(1)
+}
+
+enum DiffSource {
+    File(String),
+    Stdin,
 }
 
 fn hook_cmd(mut args: impl Iterator<Item = String>) -> ExitCode {

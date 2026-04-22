@@ -30,6 +30,22 @@ pub(crate) fn dispatch_event(app: &AppHandle, op: ServerOp) {
                 serde_json::json!({ "session_id": session_id, "mark": mark, "exit": exit }),
             );
         }
+        ServerOp::DiffPrompt {
+            session_id,
+            diff_id,
+            diff,
+            title,
+        } => {
+            let _ = app.emit(
+                "pane-diff-prompt",
+                serde_json::json!({
+                    "session_id": session_id,
+                    "diff_id": diff_id,
+                    "diff": diff,
+                    "title": title
+                }),
+            );
+        }
         ServerOp::Agent { session_id, agent } => {
             let _ = app.emit(
                 "pane-agent",

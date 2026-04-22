@@ -68,6 +68,24 @@ pub enum ClientOp {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<u32>,
     },
+    /// Agent asks the user to approve or reject a unified diff before
+    /// applying it. The request blocks on a matching DiffDecision from any
+    /// UI client subscribed to the session; daemon returns DiffResolved
+    /// once a decision arrives.
+    DiffPreview {
+        session_id: String,
+        diff_id: String,
+        diff: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+    },
+    /// UI emits this when the user clicks accept or reject on a diff
+    /// overlay. The daemon routes it back to the CLI waiter keyed on
+    /// diff_id.
+    DiffDecision {
+        diff_id: String,
+        accepted: bool,
+    },
 }
 
 /// Daemon → client.
@@ -135,6 +153,20 @@ pub enum ServerOp {
     /// Reply to SearchHistory: every command matching the query, newest first.
     HistoryResults {
         matches: Vec<HistoryMatch>,
+    },
+    /// Broadcast to every UI client subscribed to a session when an agent
+    /// submits a diff for approval.
+    DiffPrompt {
+        session_id: String,
+        diff_id: String,
+        diff: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+    },
+    /// Reply addressed to the CLI that sent DiffPreview.
+    DiffResolved {
+        diff_id: String,
+        accepted: bool,
     },
 }
 

@@ -581,6 +581,116 @@ html, body {
   font-size: 11px;
 }
 
+/* Agent diff overlay */
+
+.napkin-diff[hidden] { display: none; }
+
+.napkin-diff-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 5, 7, 0.7);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 650;
+}
+
+.napkin-diff-frame {
+  width: min(900px, 92vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 24px 56px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.napkin-diff-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.napkin-diff-title {
+  font-weight: 600;
+  color: var(--fg);
+  letter-spacing: 0.2px;
+}
+
+.napkin-diff-meta {
+  color: var(--fg-dim);
+  font-size: 11px;
+}
+
+.napkin-diff-body {
+  margin: 0;
+  padding: 12px 18px;
+  overflow-y: auto;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.45;
+  background: rgba(0, 0, 0, 0.25);
+  flex: 1 1 auto;
+  min-height: 0;
+  white-space: pre;
+}
+
+.napkin-diff-line.file {
+  color: var(--fg);
+  font-weight: 600;
+}
+.napkin-diff-line.hunk {
+  color: #61afef;
+  font-weight: 500;
+}
+.napkin-diff-line.add {
+  color: #98c379;
+  background: rgba(152, 195, 121, 0.08);
+}
+.napkin-diff-line.del {
+  color: #e06c75;
+  background: rgba(224, 108, 117, 0.08);
+}
+
+.napkin-diff-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 18px;
+  border-top: 1px solid var(--border);
+}
+
+.napkin-diff-button {
+  appearance: none;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.napkin-diff-accept {
+  background: var(--accent);
+  color: #1a1a1a;
+  border-color: var(--accent);
+}
+.napkin-diff-accept:hover {
+  filter: brightness(1.05);
+}
+.napkin-diff-reject:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
 .tab-close {
   flex-shrink: 0;
   width: 16px;
