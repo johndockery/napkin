@@ -294,6 +294,80 @@ html, body {
   letter-spacing: 0.3px;
 }
 
+/* Pane search bar (Cmd+F) */
+
+.napkin-search[hidden] { display: none; }
+
+.napkin-search {
+  position: fixed;
+  top: 46px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+  z-index: 400;
+  font-size: 12px;
+}
+
+.napkin-search-label {
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  font-weight: 600;
+}
+
+.napkin-search-input {
+  appearance: none;
+  width: 240px;
+  padding: 5px 8px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.napkin-search-input:focus {
+  border-color: rgba(245, 167, 66, 0.45);
+}
+
+.napkin-search-status {
+  color: var(--fg-dim);
+  font-size: 10.5px;
+  min-width: 0;
+}
+
+.napkin-search-button {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--fg-dim);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.napkin-search-button:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--fg);
+}
+
 .tab-close {
   flex-shrink: 0;
   width: 16px;

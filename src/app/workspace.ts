@@ -12,6 +12,7 @@ import {
 } from "./ipc.ts";
 import { createNotificationGate } from "./notifications.ts";
 import { createPanePalette, type PalettePaneEntry } from "./palette.ts";
+import { createSearchController } from "./search.ts";
 import { registerKeybindings } from "./keybindings.ts";
 import {
   createLeafPane,
@@ -111,6 +112,10 @@ export async function bootWorkspace(
   };
 
   const notifications = createNotificationGate(window);
+
+  const search = createSearchController(document, {
+    getActiveLeaf: () => state.activeTab?.activeLeaf ?? null,
+  });
 
   const listLeaves = (): LeafPane[] => {
     const leaves: LeafPane[] = [];
@@ -634,6 +639,9 @@ export async function bootWorkspace(
     toggleAgentPalette: () => palette.toggle("agents"),
     togglePanePalette: () => palette.toggle("all"),
     toggleBroadcast,
+    toggleSearch: () => search.toggle(),
+    findNextInPane: () => search.findNext(),
+    findPreviousInPane: () => search.findPrevious(),
   });
 
   window.addEventListener("resize", () => {

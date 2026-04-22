@@ -1,4 +1,5 @@
 import type { FitAddon } from "@xterm/addon-fit";
+import type { SearchAddon } from "@xterm/addon-search";
 import type { Terminal } from "@xterm/xterm";
 
 export type CleanupFn = () => void;
@@ -26,6 +27,7 @@ export interface LeafPane {
   readonly terminalHostElement: HTMLDivElement;
   readonly terminal: Terminal;
   readonly fitAddon: FitAddon;
+  readonly searchAddon: SearchAddon;
   readonly cleanup: CleanupFn[];
   resizeObserver: ResizeObserver | null;
   sessionId: string | null;
