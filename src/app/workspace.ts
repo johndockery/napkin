@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { ErrorReporter } from "./errors.ts";
 import {
   listPtySessions,
+  loadConfig,
   onPaneAgent,
   onPaneCwd,
   onPaneMark,
@@ -36,6 +37,7 @@ import {
   updateTabLabel,
 } from "./tabs.ts";
 import {
+  applyConfig,
   clampFontSize,
   DEFAULT_FONT_SIZE,
   loadFontSize,
@@ -85,13 +87,25 @@ export async function bootWorkspace(
   elements: AppElements,
   reporter: ErrorReporter,
 ): Promise<void> {
+  let rawConfig: unknown = {};
+  try {
+    rawConfig = await loadConfig();
+  } catch (error) {
+    reporter.report("failed to load config", error, { level: "warn" });
+  }
+  const config = applyConfig(rawConfig);
+
+  const storedFontSize = window.localStorage.getItem("napkin:fontSize");
+  const initialFontSize =
+    storedFontSize !== null ? loadFontSize(window.localStorage) : config.initialFontSize;
+
   const state: AppState = {
     elements,
     leavesBySessionId: new Map<string, LeafPane>(),
     tabs: [],
     activeTab: null,
     nextTabId: 0,
-    fontSize: loadFontSize(window.localStorage),
+    fontSize: initialFontSize,
   };
 
   const runAsync = (

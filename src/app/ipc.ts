@@ -77,6 +77,10 @@ export async function spawnPty(args: PtySpawnArgs): Promise<string> {
   return invoke<string>("pty_spawn", { args });
 }
 
+export async function loadConfig(): Promise<unknown> {
+  return invoke<unknown>("load_config");
+}
+
 interface RawPtySessionSummary {
   readonly session_id: string;
   readonly cwd: string;

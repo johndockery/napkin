@@ -57,6 +57,29 @@ See [`HOOKS.md`](./HOOKS.md) for setup. Short version:
 { "hooks": { "Stop": "napkin hook waiting --agent claude" } }
 ```
 
+## Configuration
+
+Optional. Napkin reads `~/.config/napkin/config.json` (or
+`$XDG_CONFIG_HOME/napkin/config.json`) on startup:
+
+```json
+{
+  "terminal": {
+    "font_family": "\"JetBrains Mono\", Menlo, monospace",
+    "font_size": 14,
+    "theme": {
+      "background": "#0b0c0f",
+      "foreground": "#e6e6e6",
+      "cursor": "#f5a742"
+    }
+  }
+}
+```
+
+Every field is optional; unknown fields are ignored. The font size set
+via `Cmd+=` / `Cmd+-` persists per-user in localStorage and overrides
+the config value.
+
 ## Building from source
 
 Prerequisites: Rust stable (1.77+), Node 20+, and one of `bun` / `pnpm` /
