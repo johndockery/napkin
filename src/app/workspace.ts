@@ -2,6 +2,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type { ErrorReporter } from "./errors.ts";
 import {
+  listPtySessions,
   onPaneAgent,
   onPaneCwd,
   onPaneMark,
@@ -257,9 +258,14 @@ export async function bootWorkspace(
     return tab;
   };
 
-  const openNewTab = async (): Promise<void> => {
+  const openNewTab = async (options: { readonly attachTo?: string; readonly initialCwd?: string } = {}): Promise<void> => {
     const tab = createTab();
     const root = getTabRoot(tab);
+
+    if (options.initialCwd && root.type === "leaf") {
+      root.cwd = options.initialCwd;
+      updateTabLabel(tab);
+    }
 
     activateTab(tab, { focusTerminal: false });
 
@@ -268,6 +274,7 @@ export async function bootWorkspace(
         leavesBySessionId: state.leavesBySessionId,
         getBroadcastTargets: () => listBroadcastTargets(tab),
         reportInvokeError,
+        existingSessionId: options.attachTo,
       });
       focusLeaf(root);
     }
@@ -636,5 +643,23 @@ export async function bootWorkspace(
     forEachLeaf(getTabRoot(state.activeTab), fitLeafPane);
   });
 
-  await openNewTab();
+  let existing: Awaited<ReturnType<typeof listPtySessions>> = [];
+  try {
+    existing = await listPtySessions();
+  } catch (error) {
+    reporter.report("failed to list sessions", error, { level: "warn" });
+  }
+
+  if (existing.length === 0) {
+    await openNewTab();
+  } else {
+    // Reattach each existing daemon session as its own tab. First tab ends up
+    // focused; ordering follows whatever the daemon reported.
+    for (const summary of existing) {
+      await openNewTab({
+        attachTo: summary.sessionId,
+        initialCwd: summary.cwd,
+      });
+    }
+  }
 }

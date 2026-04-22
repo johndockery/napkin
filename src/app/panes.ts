@@ -2,7 +2,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 
-import { killPty, resizePty, spawnPty, writePty } from "./ipc.ts";
+import { killPty, resizePty, spawnPty, subscribePty, writePty } from "./ipc.ts";
 import {
   TERMINAL_FONT_FAMILY,
   TERMINAL_THEME,
@@ -28,6 +28,8 @@ export interface LeafIoOptions {
   readonly leavesBySessionId: Map<string, LeafPane>;
   readonly getBroadcastTargets: (leaf: LeafPane) => ReadonlyArray<LeafPane>;
   readonly reportInvokeError: (context: string, error: unknown) => void;
+  /** When set, attach to this existing daemon session instead of spawning. */
+  readonly existingSessionId?: string;
 }
 
 export function createLeafPane(
@@ -111,7 +113,21 @@ export async function mountLeafPane(
 
   const rows = Math.max(1, leaf.terminal.rows);
   const cols = Math.max(1, leaf.terminal.cols);
-  const sessionId = await spawnPty({ rows, cols });
+
+  let sessionId: string;
+  if (options.existingSessionId) {
+    sessionId = options.existingSessionId;
+    try {
+      await subscribePty(sessionId, rows, cols);
+    } catch (error) {
+      // Session vanished from the daemon (shell exited before we could
+      // reattach). Fall back to spawning a fresh one.
+      options.reportInvokeError(`pty_subscribe(${sessionId})`, error);
+      sessionId = await spawnPty({ rows, cols });
+    }
+  } else {
+    sessionId = await spawnPty({ rows, cols });
+  }
 
   if (isLeafDisposed(leaf)) {
     void killPty(sessionId).catch((error) => {
