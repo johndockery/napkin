@@ -12,6 +12,7 @@ use crate::commands::{pty_kill, pty_resize, pty_spawn, pty_write};
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let handle = app.handle().clone();
             match start_client(handle) {

@@ -2,6 +2,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type { ErrorReporter } from "./errors.ts";
 import { onPaneAgent, onPaneCwd, onPaneMark, onPtyExit, onPtyOutput } from "./ipc.ts";
+import { createNotificationGate } from "./notifications.ts";
 import { createAgentPalette, type AgentPaletteEntry } from "./palette.ts";
 import { registerKeybindings } from "./keybindings.ts";
 import {
@@ -73,6 +74,8 @@ export async function bootWorkspace(
   const reportInvokeError = (context: string, error: unknown): void => {
     reporter.report(context, error, { level: "warn" });
   };
+
+  const notifications = createNotificationGate(window);
 
   const listLeaves = (): LeafPane[] => {
     const leaves: LeafPane[] = [];
@@ -428,6 +431,18 @@ export async function bootWorkspace(
         const outcome: "ok" | "error" = exit === 0 || exit === null ? "ok" : "error";
         setLeafRunState(leaf, outcome);
         scheduleIdle(leaf, COMPLETION_FLASH_MS[outcome]);
+
+        // Notify on agent completion when the user is focused elsewhere.
+        // Runs before the Agent(None) event arrives, so leaf.agent is still
+        // populated.
+        if (leaf.agent) {
+          const tabLabel = leaf.tab.customName ?? leaf.tab.labelElement.textContent ?? leaf.tab.id;
+          const verb = outcome === "ok" ? "finished" : `exited ${exit ?? "with error"}`;
+          notifications.notifyBackground({
+            title: `${leaf.agent} ${verb}`,
+            body: `${tabLabel} · ${leaf.cwd}`,
+          });
+        }
         break;
       }
     }
