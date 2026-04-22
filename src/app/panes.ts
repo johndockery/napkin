@@ -1,4 +1,5 @@
 import { FitAddon } from "@xterm/addon-fit";
+import { ImageAddon } from "@xterm/addon-image";
 import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
@@ -66,8 +67,10 @@ export function createLeafPane(
   });
   const fitAddon = new FitAddon();
   const searchAddon = new SearchAddon();
+  const imageAddon = new ImageAddon();
   terminal.loadAddon(fitAddon);
   terminal.loadAddon(searchAddon);
+  terminal.loadAddon(imageAddon);
   terminal.loadAddon(new WebLinksAddon());
 
   let leaf!: LeafPane;
@@ -88,6 +91,7 @@ export function createLeafPane(
     cleanup: [
       () => titleChangeDisposable.dispose(),
       () => searchAddon.dispose(),
+      () => imageAddon.dispose(),
     ],
     resizeObserver: null,
     sessionId: null,
