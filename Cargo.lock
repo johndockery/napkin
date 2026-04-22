@@ -2224,6 +2224,7 @@ dependencies = [
 name = "napkind"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "napkin-proto",
  "portable-pty",
  "rusqlite",

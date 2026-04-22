@@ -50,6 +50,10 @@ pub(crate) struct Session {
     pub persisted_offset: usize,
     /// Pending bytes not yet flushed to SQLite.
     pub unflushed_scrollback: Vec<u8>,
+    /// PID of the shell spawned on this PTY. Used as the SIGSTOP / SIGCONT
+    /// target when the user pauses the session. None on older sessions or
+    /// if portable-pty couldn't report a pid.
+    pub shell_pid: Option<u32>,
 }
 
 impl Session {
@@ -187,6 +191,7 @@ fn spawn_session_inner(
         .slave
         .spawn_command(cmd)
         .map_err(|e| format!("spawn failed: {e}"))?;
+    let shell_pid = child.process_id();
 
     let mut reader = pair
         .master
@@ -208,6 +213,7 @@ fn spawn_session_inner(
         pending_command: None,
         persisted_offset: 0,
         unflushed_scrollback: Vec::new(),
+        shell_pid,
     }));
 
     // Reader thread

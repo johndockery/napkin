@@ -86,6 +86,15 @@ pub enum ClientOp {
         diff_id: String,
         accepted: bool,
     },
+    /// Send SIGSTOP to the shell running in a session. Useful for freezing
+    /// a runaway agent without killing it.
+    PauseSession {
+        session_id: String,
+    },
+    /// Send SIGCONT to a previously-paused session.
+    ResumeSession {
+        session_id: String,
+    },
 }
 
 /// Daemon → client.

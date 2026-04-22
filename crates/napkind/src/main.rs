@@ -278,6 +278,14 @@ fn dispatch(
             // Don't reply here — we wait for DiffDecision.
         }
 
+        ClientOp::PauseSession { session_id } => {
+            reply(signal_session(sessions, &session_id, libc::SIGSTOP));
+        }
+
+        ClientOp::ResumeSession { session_id } => {
+            reply(signal_session(sessions, &session_id, libc::SIGCONT));
+        }
+
         ClientOp::DiffDecision { diff_id, accepted } => {
             let waiter = lock_or_recover(diff_waiters).remove(&diff_id);
             if let Some((waiter_tx, waiter_id)) = waiter {
@@ -411,4 +419,30 @@ fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Send a signal to the shell process of a session.
+fn signal_session(sessions: &SessionMap, session_id: &str, signal: libc::c_int) -> ServerOp {
+    let Some(session) = lock_or_recover(sessions).get(session_id).cloned() else {
+        return ServerOp::Err { error: "no such session".into() };
+    };
+    let pid = {
+        let s = lock_or_recover(&session);
+        s.shell_pid
+    };
+    let Some(pid) = pid else {
+        return ServerOp::Err {
+            error: "session has no known shell pid".into(),
+        };
+    };
+    // Safety: kill(2) is always safe to call.
+    let rc = unsafe { libc::kill(pid as i32, signal) };
+    if rc == 0 {
+        ServerOp::Ok
+    } else {
+        let errno = std::io::Error::last_os_error();
+        ServerOp::Err {
+            error: format!("kill({pid}, {signal}) failed: {errno}"),
+        }
+    }
 }

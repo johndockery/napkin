@@ -15,6 +15,8 @@ fn main() -> ExitCode {
         Some("hook") => hook_cmd(args),
         Some("diff") => diff_cmd(args),
         Some("workspace") | Some("ws") => workspace::run(args),
+        Some("pause") => signal_cmd(args, Signal::Pause),
+        Some("resume") => signal_cmd(args, Signal::Resume),
         Some("list") | Some("ls") => attach::list(),
         Some("attach") => {
             let Some(session_id) = args.next() else {
@@ -55,6 +57,8 @@ fn print_usage() {
                                                  .napkin-worktrees/<branch>\n\
            napkin workspace list\n\
            napkin workspace rm <name>\n\
+           napkin pause <session_id>              SIGSTOP the shell in a session\n\
+           napkin resume <session_id>             SIGCONT the shell in a session\n\
            napkin --version                       print version\n\
          \n\
          State values recognised by the UI:\n\
@@ -185,6 +189,68 @@ fn diff_cmd(mut args: impl Iterator<Item = String>) -> ExitCode {
 enum DiffSource {
     File(String),
     Stdin,
+}
+
+enum Signal { Pause, Resume }
+
+fn signal_cmd(mut args: impl Iterator<Item = String>, sig: Signal) -> ExitCode {
+    let Some(session_id) = args.next() else {
+        eprintln!("usage: napkin {} <session_id>",
+            match sig { Signal::Pause => "pause", Signal::Resume => "resume" });
+        return ExitCode::from(2);
+    };
+
+    let socket = std::env::var("NAPKIN_SOCKET")
+        .ok()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(socket_path);
+
+    let mut stream = match UnixStream::connect(&socket) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("napkin: connect {} failed: {e}", socket.display());
+            return ExitCode::from(1);
+        }
+    };
+    let msg = napkin_proto::ClientMsg {
+        id: Some(1),
+        op: match sig {
+            Signal::Pause => napkin_proto::ClientOp::PauseSession { session_id },
+            Signal::Resume => napkin_proto::ClientOp::ResumeSession { session_id },
+        },
+    };
+    let line = match serde_json::to_string(&msg) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("napkin: encode: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    if let Err(e) = writeln!(stream, "{line}") {
+        eprintln!("napkin: write: {e}");
+        return ExitCode::from(1);
+    }
+
+    use std::io::{BufRead, BufReader};
+    let reader = BufReader::new(stream);
+    for line in reader.lines() {
+        let Ok(line) = line else { break };
+        let Ok(reply) = serde_json::from_str::<napkin_proto::ServerMsg>(&line) else {
+            continue;
+        };
+        if reply.id != Some(1) {
+            continue;
+        }
+        return match reply.op {
+            napkin_proto::ServerOp::Ok => ExitCode::SUCCESS,
+            napkin_proto::ServerOp::Err { error } => {
+                eprintln!("napkin: {error}");
+                ExitCode::from(1)
+            }
+            _ => ExitCode::from(1),
+        };
+    }
+    ExitCode::from(1)
 }
 
 fn hook_cmd(mut args: impl Iterator<Item = String>) -> ExitCode {
