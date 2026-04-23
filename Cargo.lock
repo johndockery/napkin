@@ -2267,7 +2267,7 @@ dependencies = [
 
 [[package]]
 name = "napkin-app"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "napkin-proto",
  "notify",
@@ -2281,7 +2281,7 @@ dependencies = [
 
 [[package]]
 name = "napkin-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "libc",
  "napkin-proto",
@@ -2292,7 +2292,7 @@ dependencies = [
 
 [[package]]
 name = "napkin-proto"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2300,7 +2300,7 @@ dependencies = [
 
 [[package]]
 name = "napkind"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "libc",
  "napkin-proto",

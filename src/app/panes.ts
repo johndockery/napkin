@@ -30,6 +30,8 @@ export interface LeafIoOptions {
   readonly leavesBySessionId: Map<string, LeafPane>;
   readonly getBroadcastTargets: (leaf: LeafPane) => ReadonlyArray<LeafPane>;
   readonly reportInvokeError: (context: string, error: unknown) => void;
+  /** Preferred editor command for file links. Falls back to $EDITOR. */
+  readonly getEditor?: () => string | null;
   /** When set, attach to this existing daemon session instead of spawning. */
   readonly existingSessionId?: string;
   /** Overrides from user config for newly-spawned shells. */
@@ -44,8 +46,9 @@ export interface LeafIoOptions {
 export function attachLinkProviders(
   leaf: LeafPane,
   reportError: (context: string, error: unknown) => void,
+  getEditor: () => string | null = () => null,
 ): void {
-  registerFilePathLinks(leaf.terminal, reportError);
+  registerFilePathLinks(leaf.terminal, reportError, getEditor);
 }
 
 export function createLeafPane(
@@ -142,7 +145,7 @@ export async function mountLeafPane(
     options.reportInvokeError("webgl renderer unavailable", error);
   }
 
-  attachLinkProviders(leaf, options.reportInvokeError);
+  attachLinkProviders(leaf, options.reportInvokeError, options.getEditor);
   registerClipboardHandler(leaf.terminal);
 
   leaf.resizeObserver = new ResizeObserver(() => {
@@ -404,6 +407,11 @@ export function setLeafFontSize(leaf: LeafPane, fontSize: number): void {
   fitLeafPane(leaf);
 }
 
+export function setSplitRatio(split: SplitPane, ratio: number): void {
+  split.ratio = Math.min(0.9, Math.max(0.1, ratio));
+  applySplitRatio(split);
+}
+
 /**
  * Apply a freshly loaded config to a running terminal. Updates every option
  * xterm can change in-place; things that would need a re-mount (e.g.
@@ -469,8 +477,7 @@ function attachSplitResizer(split: SplitPane): void {
       const delta = split.direction === "horizontal"
         ? moveEvent.clientX - startX
         : moveEvent.clientY - startY;
-      split.ratio = Math.min(0.9, Math.max(0.1, startRatio + delta / size));
-      applySplitRatio(split);
+      setSplitRatio(split, startRatio + delta / size);
     };
 
     const onUp = () => {

@@ -19,7 +19,7 @@ use napkin_proto::{
 };
 use portable_pty::PtySize;
 
-use session::{spawn_session, Session};
+use session::{spawn_session, Session, SpawnSessionRequest};
 use storage::Storage;
 
 type SessionMap = Arc<Mutex<HashMap<String, Arc<Mutex<Session>>>>>;
@@ -172,16 +172,17 @@ fn dispatch(
             shell,
             shell_args,
             env,
-        } => match spawn_session(
+        } => match spawn_session(SpawnSessionRequest {
+            preassigned_id: None,
             rows,
             cols,
             cwd,
             shell,
             shell_args,
             env,
-            tx.clone(),
-            storage.clone(),
-        ) {
+            initial_subscriber: tx.clone(),
+            storage: storage.clone(),
+        }) {
             Ok((sid, session)) => {
                 {
                     let cwd = lock_or_recover(&session).cwd.clone();
@@ -546,7 +547,9 @@ fn terminate_session_processes(
         return Ok(());
     }
 
-    Err(std::io::Error::other("timed out waiting for session to exit"))
+    Err(std::io::Error::other(
+        "timed out waiting for session to exit",
+    ))
 }
 
 fn push_signal_target(targets: &mut Vec<SignalTarget>, target: SignalTarget) {

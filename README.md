@@ -20,6 +20,8 @@ understands that you have six panes running agents at once.
   prompt boundaries, exit codes, and cwd tracking
 - **Agent detection** on command names (`claude`, `codex`, `cursor`,
   `aider`, `gemini`, `opencode`) with a coloured badge in the tab
+- **Agent Mission Control** (`Cmd+Shift+O`) to scan every pane, pause/resume
+  sessions, launch agents from a task prompt, and open the diff inbox
 - **Agent hooks** via a small `napkin` CLI so Claude Code's `Stop` hook
   (and equivalents) can drive napkin with *exact* semantic state instead
   of inferred state
@@ -27,6 +29,10 @@ understands that you have six panes running agents at once.
   or finishes while the window isn't focused
 - **Palettes**: `Cmd+P` to jump to any pane; `Cmd+Shift+A` to filter to
   running agents
+- **Workspace restore** remembers tabs, splits, attached daemon sessions,
+  cwd, tab colors, and write locks between app launches
+- **Command timeline** (`Cmd+Shift+F`) shows recent commands across sessions,
+  copies the selected command, and jumps to the live pane when it still exists
 - **Pane search** (`Cmd+F`) powered by xterm's search addon
 
 ## Keybindings
@@ -41,6 +47,8 @@ understands that you have six panes running agents at once.
 | `Cmd+Shift+←↑→↓`             | Focus neighbour pane                           |
 | `Cmd+P`                      | Pane palette with search                       |
 | `Cmd+Shift+A`                | Agent palette (running agents only)            |
+| `Cmd+Shift+O`                | Agent Mission Control                          |
+| `Cmd+Shift+F`                | Command timeline                               |
 | `Cmd+F`                      | Search within pane                             |
 | `Cmd+G` / `Cmd+Shift+G`      | Next / previous match                          |
 | `Cmd+Shift+B`                | Toggle broadcast input                         |
@@ -107,17 +115,17 @@ overrides the config value until you run "Font: reset" (⌘0).
 brew install napkin-term/napkin/napkin
 
 # One-line installer
-curl -fsSL https://napkin.sh/install | sh
+curl -fsSL https://napkin.world/install | sh
 ```
 
 **Linux (x86_64)** — same release page produces `.deb` and `.AppImage`.
 
 ```sh
-curl -fsSL https://napkin.sh/install | sh
+curl -fsSL https://napkin.world/install | sh
 systemctl --user enable --now napkind   # optional: start napkind at login
 ```
 
-> **Codesigning status:** pre-v0.1.0 builds are unsigned. macOS will
+> **Codesigning status:** current pre-signing builds are unsigned. macOS will
 > gatekeep on first launch; right-click the app in Finder → **Open** the
 > first time. A signed + notarized build is the next milestone.
 

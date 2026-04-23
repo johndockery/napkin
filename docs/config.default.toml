@@ -91,6 +91,7 @@
 # find             = "Cmd+F"
 # history          = "Cmd+Shift+F"
 # command_palette  = "Cmd+Shift+P"
+# mission_control  = "Cmd+Shift+O"
 # pane_palette     = "Cmd+P"
 # toggle_help      = "Cmd+/"
 # broadcast        = "Cmd+Shift+B"

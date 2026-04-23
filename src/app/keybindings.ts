@@ -13,6 +13,7 @@ export interface KeybindingHandlers {
   readonly toggleAgentPalette: () => void;
   readonly togglePanePalette: () => void;
   readonly toggleBroadcast: () => void;
+  readonly toggleMissionControl: () => void;
   readonly toggleSearch: () => void;
   readonly toggleHistorySearch: () => void;
   readonly findNextInPane: () => void;
@@ -32,6 +33,7 @@ export type ActionName =
   | "split_vertical"
   | "clear_pane"
   | "broadcast"
+  | "mission_control"
   | "agent_palette"
   | "pane_palette"
   | "command_palette"
@@ -73,6 +75,7 @@ const DEFAULT_BINDINGS: Record<ActionName, string> = {
   split_vertical: "Cmd+Shift+D",
   clear_pane: "Cmd+K",
   broadcast: "Cmd+Shift+B",
+  mission_control: "Cmd+Shift+O",
   agent_palette: "Cmd+Shift+A",
   pane_palette: "Cmd+P",
   command_palette: "Cmd+Shift+P",
@@ -112,6 +115,7 @@ export function registerKeybindings(
       case "split_vertical": handlers.splitActive("vertical"); return true;
       case "clear_pane": handlers.clearActive(); return true;
       case "broadcast": handlers.toggleBroadcast(); return true;
+      case "mission_control": handlers.toggleMissionControl(); return true;
       case "agent_palette": handlers.toggleAgentPalette(); return true;
       case "pane_palette": handlers.togglePanePalette(); return true;
       case "command_palette": handlers.toggleCommandPalette(); return true;

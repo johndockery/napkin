@@ -5,7 +5,7 @@
 # installs the binaries into ~/.local/bin (napkin + napkind) and, on
 # macOS, drops the .app into ~/Applications.
 #
-#   curl -fsSL https://napkin.sh/install | sh
+#   curl -fsSL https://napkin.world/install | sh
 #
 # Intentionally POSIX sh so it runs inside minimal containers and
 # fresh VMs.

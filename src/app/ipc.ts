@@ -122,8 +122,9 @@ export async function openInEditor(
   path: string,
   line: number | null,
   column: number | null,
+  editor: string | null = null,
 ): Promise<void> {
-  await invoke("open_in_editor", { path, line, column });
+  await invoke("open_in_editor", { path, line, column, editor });
 }
 
 interface RawPtySessionSummary {
@@ -185,6 +186,14 @@ export async function resizePty(
 
 export async function killPty(sessionId: string): Promise<void> {
   await invoke("pty_kill", { sessionId });
+}
+
+export async function pausePty(sessionId: string): Promise<void> {
+  await invoke("pty_pause", { sessionId });
+}
+
+export async function resumePty(sessionId: string): Promise<void> {
+  await invoke("pty_resume", { sessionId });
 }
 
 export async function onPtyOutput(

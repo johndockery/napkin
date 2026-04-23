@@ -13,6 +13,9 @@ import {
   onPaneStatus,
   onPtyExit,
   onPtyOutput,
+  pausePty,
+  resumePty,
+  writePty,
 } from "./ipc.ts";
 import { createNotificationGate } from "./notifications.ts";
 import { createCommandPalette, type CommandEntry } from "./commands.ts";
@@ -21,6 +24,7 @@ import { createDiffOverlay } from "./diff-overlay.ts";
 import { registerFileDropPaste } from "./file-drops.ts";
 import { createHelpOverlay } from "./help.ts";
 import { createHistoryPalette } from "./history-palette.ts";
+import { createMissionControl, type MissionControlEntry } from "./mission-control.ts";
 import { createPanePalette, type PalettePaneEntry } from "./palette.ts";
 import { createSearchController } from "./search.ts";
 import { registerKeybindings } from "./keybindings.ts";
@@ -36,6 +40,7 @@ import {
   mountLeafPane,
   replacePaneInTree,
   setLeafFontSize,
+  setSplitRatio,
 } from "./panes.ts";
 import {
   bindTabEvents,
@@ -59,6 +64,7 @@ import type {
   AppState,
   LeafPane,
   NavigationDirection,
+  PaneNode,
   PaneRunState,
   SplitDirection,
   Tab,
@@ -92,6 +98,107 @@ function normalizeStatusState(raw: string): PaneRunState {
   }
 }
 
+const WORKSPACE_SNAPSHOT_KEY = "napkin:workspaceSnapshot:v1";
+const workspaceSnapshotVersion = 1;
+const agentCommandEncoder = new TextEncoder();
+
+interface SnapshotBookmark {
+  readonly line: number;
+  readonly label: string;
+  readonly createdAt: number;
+}
+
+interface SnapshotLeafNode {
+  readonly type: "leaf";
+  readonly sessionId: string | null;
+  readonly cwd: string;
+  readonly writeLocked: boolean;
+  readonly bookmarks: readonly SnapshotBookmark[];
+}
+
+interface SnapshotSplitNode {
+  readonly type: "split";
+  readonly direction: SplitDirection;
+  readonly ratio: number;
+  readonly a: SnapshotPaneNode;
+  readonly b: SnapshotPaneNode;
+}
+
+type SnapshotPaneNode = SnapshotLeafNode | SnapshotSplitNode;
+
+interface SnapshotTab {
+  readonly customName: string | null;
+  readonly color: string | null;
+  readonly broadcastInput: boolean;
+  readonly activeSessionId: string | null;
+  readonly root: SnapshotPaneNode;
+}
+
+interface WorkspaceSnapshot {
+  readonly version: typeof workspaceSnapshotVersion;
+  readonly activeTabIndex: number;
+  readonly tabs: readonly SnapshotTab[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isSnapshotPaneNode(value: unknown): value is SnapshotPaneNode {
+  if (!isRecord(value) || typeof value.type !== "string") return false;
+  if (value.type === "leaf") return true;
+  if (value.type !== "split") return false;
+  return (
+    (value.direction === "horizontal" || value.direction === "vertical") &&
+    typeof value.ratio === "number" &&
+    isSnapshotPaneNode(value.a) &&
+    isSnapshotPaneNode(value.b)
+  );
+}
+
+function parseWorkspaceSnapshot(raw: string | null): WorkspaceSnapshot | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) return null;
+    if (parsed.version !== workspaceSnapshotVersion) return null;
+    if (!Array.isArray(parsed.tabs)) return null;
+    if (typeof parsed.activeTabIndex !== "number") return null;
+    if (!parsed.tabs.every((tab) => isRecord(tab) && isSnapshotPaneNode(tab.root))) {
+      return null;
+    }
+    return parsed as unknown as WorkspaceSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\"'\"'")}'`;
+}
+
+function agentCommand(provider: string, task: string): string {
+  const trimmed = task.trim();
+  if (!trimmed) return provider;
+  const quoted = shellQuote(trimmed);
+  switch (provider) {
+    case "aider":
+      return `aider --message ${quoted}`;
+    case "gemini":
+      return `gemini -p ${quoted}`;
+    case "opencode":
+      return `opencode run ${quoted}`;
+    default:
+      return `${provider} ${quoted}`;
+  }
+}
+
+function shortTaskLabel(provider: string, task: string): string {
+  const compact = task.replace(/\s+/g, " ").trim();
+  if (!compact) return provider;
+  return `${provider}: ${compact.length > 28 ? `${compact.slice(0, 27)}...` : compact}`;
+}
+
 export async function bootWorkspace(
   elements: AppElements,
   reporter: ErrorReporter,
@@ -118,7 +225,7 @@ export async function bootWorkspace(
   };
 
   const runAsync = (
-    action: () => Promise<void>,
+    action: () => Promise<unknown>,
     context: string,
     sticky = false,
   ): void => {
@@ -141,8 +248,66 @@ export async function bootWorkspace(
   });
 
   const help = createHelpOverlay(document);
-  const historyPalette = createHistoryPalette(document);
-  await createDiffOverlay(document);
+  const historyPalette = createHistoryPalette(document, {
+    onSelect: (entry) => {
+      void navigator.clipboard.writeText(entry.cmd).catch(() => {});
+      const leaf = state.leavesBySessionId.get(entry.session_id);
+      if (!leaf) return;
+      if (state.activeTab !== leaf.tab) {
+        activateTab(leaf.tab, { focusTerminal: false });
+      }
+      leaf.tab.activeLeaf = leaf;
+      focusLeaf(leaf);
+    },
+  });
+  const diffOverlay = await createDiffOverlay(document);
+  const missionControl = createMissionControl(document, {
+    listEntries: (): MissionControlEntry[] => {
+      const entries: MissionControlEntry[] = [];
+      for (const tab of state.tabs) {
+        forEachLeaf(getTabRoot(tab), (leaf) => {
+          entries.push({
+            tabLabel: tab.customName ?? tab.labelElement.textContent ?? tab.id,
+            cwd: leaf.cwd,
+            agent: leaf.agent,
+            runState: leaf.runState,
+            sessionId: leaf.sessionId,
+            tokens: leaf.agentTokens,
+            costUsd: leaf.agentCostUsd,
+            runningSince: leaf.agentRunningSince,
+            writeLocked: leaf.writeLocked,
+            leaf,
+          });
+        });
+      }
+      return entries;
+    },
+    onFocus: (leaf) => {
+      if (state.activeTab !== leaf.tab) {
+        activateTab(leaf.tab, { focusTerminal: false });
+      }
+      leaf.tab.activeLeaf = leaf;
+      focusLeaf(leaf);
+    },
+    onPause: async (leaf) => {
+      if (leaf.sessionId) {
+        await pausePty(leaf.sessionId);
+      }
+    },
+    onResume: async (leaf) => {
+      if (leaf.sessionId) {
+        await resumePty(leaf.sessionId);
+      }
+    },
+    onKill: async (leaf) => {
+      await closeLeafPane(leaf);
+    },
+    onToggleWriteLock: (leaf) => {
+      setLeafWriteLocked(leaf, !leaf.writeLocked);
+    },
+    onLaunchAgent: (provider, task) => launchAgent(provider, task),
+    onOpenDiffInbox: () => diffOverlay.toggleInbox(),
+  });
 
   const commandPalette = createCommandPalette(document, {
     listCommands: (): CommandEntry[] => [
@@ -180,7 +345,10 @@ export async function bootWorkspace(
         title: "Rename tab",
         run: () => {
           if (state.activeTab) {
-            startTabRename(state.activeTab, () => updateTabLabel(state.activeTab!));
+            startTabRename(state.activeTab, () => {
+              updateTabLabel(state.activeTab!);
+              scheduleWorkspaceSnapshot();
+            });
           }
         },
       },
@@ -215,6 +383,19 @@ export async function bootWorkspace(
           : "Turn broadcast input on",
         shortcut: "⌘⇧B",
         run: () => toggleBroadcast(),
+      },
+      {
+        id: "mission-control",
+        category: "Agents",
+        title: "Agent Mission Control",
+        shortcut: "⌘⇧O",
+        run: () => missionControl.toggle(),
+      },
+      {
+        id: "diff-inbox",
+        category: "Agents",
+        title: `Diff inbox${diffOverlay.pendingCount() > 0 ? ` (${diffOverlay.pendingCount()})` : ""}`,
+        run: () => diffOverlay.toggleInbox(),
       },
       {
         id: "pane-palette",
@@ -261,7 +442,7 @@ export async function bootWorkspace(
       {
         id: "search-history",
         category: "Navigate",
-        title: "Search command history",
+        title: "Command timeline",
         shortcut: "⌘⇧F",
         run: () => historyPalette.toggle(),
       },
@@ -364,6 +545,56 @@ export async function bootWorkspace(
     return leaves;
   };
 
+  let isRestoringWorkspace = false;
+  let snapshotTimer: number | null = null;
+
+  const serializePaneNode = (node: PaneNode): SnapshotPaneNode => {
+    if (node.type === "leaf") {
+      return {
+        type: "leaf",
+        sessionId: node.sessionId,
+        cwd: node.cwd,
+        writeLocked: node.writeLocked,
+        bookmarks: node.bookmarks.slice(-64),
+      };
+    }
+    return {
+      type: "split",
+      direction: node.direction,
+      ratio: node.ratio,
+      a: serializePaneNode(node.a),
+      b: serializePaneNode(node.b),
+    };
+  };
+
+  const saveWorkspaceSnapshot = (): void => {
+    if (isRestoringWorkspace || state.tabs.length === 0) return;
+    const activeTabIndex = state.activeTab ? state.tabs.indexOf(state.activeTab) : 0;
+    const snapshot: WorkspaceSnapshot = {
+      version: workspaceSnapshotVersion,
+      activeTabIndex: Math.max(0, activeTabIndex),
+      tabs: state.tabs.map((tab) => ({
+        customName: tab.customName,
+        color: tab.color,
+        broadcastInput: tab.broadcastInput,
+        activeSessionId: tab.activeLeaf?.sessionId ?? null,
+        root: serializePaneNode(getTabRoot(tab)),
+      })),
+    };
+    window.localStorage.setItem(WORKSPACE_SNAPSHOT_KEY, JSON.stringify(snapshot));
+  };
+
+  const scheduleWorkspaceSnapshot = (): void => {
+    if (isRestoringWorkspace) return;
+    if (snapshotTimer !== null) {
+      window.clearTimeout(snapshotTimer);
+    }
+    snapshotTimer = window.setTimeout(() => {
+      snapshotTimer = null;
+      saveWorkspaceSnapshot();
+    }, 120);
+  };
+
   const currentSpawnOverrides = () => {
     const { program, args, env, cwd } = config.shell;
     const overrides: {
@@ -395,10 +626,14 @@ export async function bootWorkspace(
     }
   };
 
+  let unregisterKeybindings: (() => void) | null = null;
+  let rebindKeybindings: (() => void) | null = null;
+
   await onConfigChanged((raw) => {
     try {
       config = applyConfig(raw);
       reapplyConfigToLeaves();
+      rebindKeybindings?.();
     } catch (error) {
       reporter.report("failed to apply reloaded config", error, { level: "warn" });
     }
@@ -417,6 +652,8 @@ export async function bootWorkspace(
     if (leaf.tab.activeLeaf === leaf) {
       setTabRunState(leaf.tab, state);
     }
+    missionControl.refresh();
+    scheduleWorkspaceSnapshot();
   };
 
   const scheduleIdle = (leaf: LeafPane, delayMs: number): void => {
@@ -454,6 +691,7 @@ export async function bootWorkspace(
     updateTabLabel(tab);
     setTabRunState(tab, leaf.runState);
     setTabAgent(tab, leaf.agent);
+    scheduleWorkspaceSnapshot();
   };
 
   const syncBroadcastState = (tab: Tab): void => {
@@ -497,9 +735,26 @@ export async function bootWorkspace(
     if (nextLeaf) {
       focusLeaf(nextLeaf, options);
     }
+    scheduleWorkspaceSnapshot();
   };
 
-  const createTab = (): Tab => {
+  const createLeafForTab = (tab: Tab): LeafPane =>
+    createLeafPane(tab, {
+      fontSize: state.fontSize,
+      onCwdChange: (leaf) => {
+        if (leaf.tab.activeLeaf === leaf) {
+          updateTabLabel(leaf.tab);
+        }
+        scheduleWorkspaceSnapshot();
+      },
+      onFocusRequested: (leaf) => {
+        focusLeaf(leaf);
+      },
+    });
+
+  const createTab = (
+    options: { readonly createRoot?: boolean } = {},
+  ): Tab => {
     const id = `t${++state.nextTabId}`;
     const chrome = createTabElements(id);
     const tab: Tab = {
@@ -512,18 +767,9 @@ export async function bootWorkspace(
       color: null,
     };
 
-    const root = createLeafPane(tab, {
-      fontSize: state.fontSize,
-      onCwdChange: (leaf) => {
-        if (leaf.tab.activeLeaf === leaf) {
-          updateTabLabel(leaf.tab);
-        }
-      },
-      onFocusRequested: (leaf) => {
-        focusLeaf(leaf);
-      },
-    });
-    tab.root = root;
+    if (options.createRoot !== false) {
+      tab.root = createLeafForTab(tab);
+    }
 
     bindTabEvents(tab, {
       onActivate: () => activateTab(tab),
@@ -531,7 +777,10 @@ export async function bootWorkspace(
         runAsync(() => closeTab(tab), "failed to close tab");
       },
       onRenameRequested: () => {
-        startTabRename(tab, () => updateTabLabel(tab));
+        startTabRename(tab, () => {
+          updateTabLabel(tab);
+          scheduleWorkspaceSnapshot();
+        });
       },
       onReorder: (draggedId, beforeId) => reorderTab(draggedId, beforeId),
       onContextMenu: (anchor) => {
@@ -539,6 +788,7 @@ export async function bootWorkspace(
           onSelect: (key) => {
             tab.color = key;
             applyTabColor(tab, key);
+            scheduleWorkspaceSnapshot();
           },
         });
       },
@@ -547,12 +797,17 @@ export async function bootWorkspace(
     mountTab(tab, elements.tabStrip, elements.newTabButton);
     state.tabs.push(tab);
     updateTabLabel(tab);
-    syncBroadcastState(tab);
+    if (tab.root) {
+      syncBroadcastState(tab);
+    }
+    scheduleWorkspaceSnapshot();
 
     return tab;
   };
 
-  const openNewTab = async (options: { readonly attachTo?: string; readonly initialCwd?: string } = {}): Promise<void> => {
+  const openNewTab = async (
+    options: { readonly attachTo?: string; readonly initialCwd?: string } = {},
+  ): Promise<LeafPane | null> => {
     const tab = createTab();
     const root = getTabRoot(tab);
 
@@ -564,15 +819,25 @@ export async function bootWorkspace(
     activateTab(tab, { focusTerminal: false });
 
     if (root.type === "leaf") {
+      const spawnOverrides = currentSpawnOverrides();
+      const initialCwd =
+        options.initialCwd && options.initialCwd !== "~" ? options.initialCwd : undefined;
       await mountLeafPane(root, {
         leavesBySessionId: state.leavesBySessionId,
         getBroadcastTargets: () => listBroadcastTargets(tab),
         reportInvokeError,
+        getEditor: () => config.integrations.editor,
         existingSessionId: options.attachTo,
-        spawnOverrides: currentSpawnOverrides(),
+        spawnOverrides: {
+          ...spawnOverrides,
+          cwd: spawnOverrides.cwd ?? initialCwd,
+        },
       });
       focusLeaf(root);
+      scheduleWorkspaceSnapshot();
+      return root;
     }
+    return null;
   };
 
   const closeTab = async (tab: Tab): Promise<void> => {
@@ -590,6 +855,7 @@ export async function bootWorkspace(
       state.tabs.splice(index, 1);
     }
     tab.element.remove();
+    scheduleWorkspaceSnapshot();
 
     if (state.tabs.length === 0) {
       try {
@@ -628,6 +894,7 @@ export async function bootWorkspace(
       ? state.tabs.find((t) => t.id === beforeId)?.element ?? null
       : elements.newTabButton;
     elements.tabStrip.insertBefore(tab.element, anchor);
+    scheduleWorkspaceSnapshot();
   };
 
   const listBroadcastTargets = (tab: Tab): LeafPane[] => {
@@ -643,17 +910,7 @@ export async function bootWorkspace(
       return;
     }
 
-    const nextLeaf = createLeafPane(tab, {
-      fontSize: state.fontSize,
-      onCwdChange: (leaf) => {
-        if (leaf.tab.activeLeaf === leaf) {
-          updateTabLabel(leaf.tab);
-        }
-      },
-      onFocusRequested: (leaf) => {
-        focusLeaf(leaf);
-      },
-    });
+    const nextLeaf = createLeafForTab(tab);
     const split = createSplitPane(direction, activeLeaf, nextLeaf);
 
     replacePaneInTree(tab, activeLeaf, split, elements.container);
@@ -663,20 +920,23 @@ export async function bootWorkspace(
       leavesBySessionId: state.leavesBySessionId,
       getBroadcastTargets: () => listBroadcastTargets(tab),
       reportInvokeError,
+      getEditor: () => config.integrations.editor,
       spawnOverrides: currentSpawnOverrides(),
     });
     focusLeaf(nextLeaf);
+    scheduleWorkspaceSnapshot();
   };
 
-  const closeActivePane = async (): Promise<void> => {
-    const tab = state.activeTab;
-    const leaf = tab?.activeLeaf;
-    if (!tab || !leaf) {
+  const closeLeafPane = async (leaf: LeafPane): Promise<void> => {
+    const tab = leaf.tab;
+    if (leaf.mountState === "disposed") {
       return;
     }
 
     const parent = leaf.parent;
-    tab.activeLeaf = null;
+    if (tab.activeLeaf === leaf) {
+      tab.activeLeaf = null;
+    }
 
     disposeLeafPane(leaf, {
       leavesBySessionId: state.leavesBySessionId,
@@ -693,10 +953,24 @@ export async function bootWorkspace(
 
     const nextLeaf = findFirstLeaf(sibling);
     if (nextLeaf) {
-      focusLeaf(nextLeaf);
+      if (state.activeTab === tab) {
+        focusLeaf(nextLeaf);
+      } else {
+        tab.activeLeaf = nextLeaf;
+        updateTabLabel(tab);
+      }
     } else {
       updateTabLabel(tab);
     }
+    scheduleWorkspaceSnapshot();
+  };
+
+  const closeActivePane = async (): Promise<void> => {
+    const leaf = state.activeTab?.activeLeaf;
+    if (!leaf) {
+      return;
+    }
+    await closeLeafPane(leaf);
   };
 
   const navigate = (direction: NavigationDirection): void => {
@@ -728,19 +1002,53 @@ export async function bootWorkspace(
       return;
     }
 
+    if (!state.activeTab.broadcastInput) {
+      const targets = listBroadcastTargets(state.activeTab).filter((leaf) => !leaf.writeLocked);
+      if (targets.length > 1) {
+        const ok = window.confirm(
+          `Broadcast input to ${targets.length} unlocked panes in this tab?`,
+        );
+        if (!ok) return;
+      }
+    }
+
     state.activeTab.broadcastInput = !state.activeTab.broadcastInput;
     syncBroadcastState(state.activeTab);
+    scheduleWorkspaceSnapshot();
   };
 
   const clearActive = (): void => {
     state.activeTab?.activeLeaf?.terminal.clear();
   };
 
+  const setLeafWriteLocked = (leaf: LeafPane, locked: boolean): void => {
+    leaf.writeLocked = locked;
+    leaf.element.classList.toggle("write-locked", leaf.writeLocked);
+    scheduleWorkspaceSnapshot();
+  };
+
   const toggleWriteLock = (): void => {
     const leaf = state.activeTab?.activeLeaf;
     if (!leaf) return;
-    leaf.writeLocked = !leaf.writeLocked;
-    leaf.element.classList.toggle("write-locked", leaf.writeLocked);
+    setLeafWriteLocked(leaf, !leaf.writeLocked);
+  };
+
+  const launchAgent = async (provider: string, task: string): Promise<void> => {
+    const initialCwd = state.activeTab?.activeLeaf?.cwd;
+    const leaf = await openNewTab({ initialCwd });
+    if (!leaf?.sessionId) return;
+
+    const command = agentCommand(provider, task);
+    const payload = Array.from(agentCommandEncoder.encode(`${command}\r`));
+    await writePty(leaf.sessionId, payload);
+    leaf.agent = provider;
+    leaf.agentRunningSince = Date.now();
+    setLeafRunState(leaf, "running");
+    setTabAgent(leaf.tab, provider);
+    leaf.tab.customName = shortTaskLabel(provider, task);
+    updateTabLabel(leaf.tab);
+    missionControl.refresh();
+    scheduleWorkspaceSnapshot();
   };
 
   const addBookmark = (): void => {
@@ -756,6 +1064,7 @@ export async function bootWorkspace(
     if (leaf.bookmarks.length > 64) {
       leaf.bookmarks.splice(0, leaf.bookmarks.length - 64);
     }
+    scheduleWorkspaceSnapshot();
   };
 
   const jumpToBookmark = (leaf: LeafPane, line: number): void => {
@@ -857,6 +1166,121 @@ export async function bootWorkspace(
       return;
     }
     activateTab(state.tabs[index]);
+  };
+
+  const findLeafBySessionId = (root: PaneNode, sessionId: string | null): LeafPane | null => {
+    if (!sessionId) return null;
+    let found: LeafPane | null = null;
+    forEachLeaf(root, (leaf) => {
+      if (leaf.sessionId === sessionId) {
+        found = leaf;
+      }
+    });
+    return found;
+  };
+
+  const restoreWorkspaceSnapshot = async (): Promise<boolean> => {
+    const snapshot = parseWorkspaceSnapshot(
+      window.localStorage.getItem(WORKSPACE_SNAPSHOT_KEY),
+    );
+    if (!snapshot || snapshot.tabs.length === 0 || state.tabs.length > 0) {
+      return false;
+    }
+
+    isRestoringWorkspace = true;
+    const restoredTabs: Tab[] = [];
+    const pendingSessionIds = new Map<LeafPane, string | null>();
+    const pendingActiveSessions = new Map<Tab, string | null>();
+
+    const findPendingLeaf = (root: PaneNode, sessionId: string | null): LeafPane | null => {
+      if (!sessionId) return null;
+      let found: LeafPane | null = null;
+      forEachLeaf(root, (leaf) => {
+        if (pendingSessionIds.get(leaf) === sessionId) {
+          found = leaf;
+        }
+      });
+      return found;
+    };
+
+    const buildPane = (tab: Tab, node: SnapshotPaneNode): PaneNode => {
+      if (node.type === "leaf") {
+        const leaf = createLeafForTab(tab);
+        leaf.cwd = typeof node.cwd === "string" ? node.cwd : "~";
+        const bookmarks = Array.isArray(node.bookmarks) ? node.bookmarks : [];
+        leaf.bookmarks.splice(0, leaf.bookmarks.length, ...bookmarks);
+        setLeafWriteLocked(leaf, node.writeLocked === true);
+        pendingSessionIds.set(leaf, node.sessionId);
+        return leaf;
+      }
+      const split = createSplitPane(
+        node.direction,
+        buildPane(tab, node.a),
+        buildPane(tab, node.b),
+      );
+      setSplitRatio(split, node.ratio);
+      return split;
+    };
+
+    try {
+      for (const tabSnapshot of snapshot.tabs) {
+        const tab = createTab({ createRoot: false });
+        tab.customName = tabSnapshot.customName;
+        tab.color = tabSnapshot.color;
+        tab.broadcastInput = tabSnapshot.broadcastInput;
+        tab.root = buildPane(tab, tabSnapshot.root);
+        if (tab.color) {
+          applyTabColor(tab, tab.color);
+        }
+        pendingActiveSessions.set(tab, tabSnapshot.activeSessionId);
+        tab.activeLeaf =
+          findPendingLeaf(getTabRoot(tab), tabSnapshot.activeSessionId) ??
+          findFirstLeaf(getTabRoot(tab));
+        updateTabLabel(tab);
+        syncBroadcastState(tab);
+        restoredTabs.push(tab);
+      }
+
+      for (const tab of restoredTabs) {
+        activateTab(tab, { focusTerminal: false });
+        const leaves: LeafPane[] = [];
+        forEachLeaf(getTabRoot(tab), (leaf) => leaves.push(leaf));
+        for (const leaf of leaves) {
+          const sessionId = pendingSessionIds.get(leaf) ?? undefined;
+          const spawnOverrides = currentSpawnOverrides();
+          const fallbackCwd = leaf.cwd !== "~" ? leaf.cwd : undefined;
+          await mountLeafPane(leaf, {
+            leavesBySessionId: state.leavesBySessionId,
+            getBroadcastTargets: () => listBroadcastTargets(tab),
+            reportInvokeError,
+            getEditor: () => config.integrations.editor,
+            existingSessionId: sessionId,
+            spawnOverrides: {
+              ...spawnOverrides,
+              cwd: spawnOverrides.cwd ?? fallbackCwd,
+            },
+          });
+        }
+        const activeLeaf =
+          findLeafBySessionId(getTabRoot(tab), pendingActiveSessions.get(tab) ?? null) ??
+          tab.activeLeaf ??
+          findFirstLeaf(getTabRoot(tab));
+        if (activeLeaf) {
+          tab.activeLeaf = activeLeaf;
+          focusLeaf(activeLeaf, { focusTerminal: false });
+        }
+      }
+
+      const activeIndex = Math.min(
+        Math.max(0, snapshot.activeTabIndex),
+        restoredTabs.length - 1,
+      );
+      activateTab(restoredTabs[activeIndex], { focusTerminal: false });
+      return true;
+    } finally {
+      isRestoringWorkspace = false;
+      scheduleWorkspaceSnapshot();
+    }
   };
 
   await onPtyOutput(({ sessionId, data }) => {
@@ -983,6 +1407,8 @@ export async function bootWorkspace(
       });
     }
     palette.refresh();
+    missionControl.refresh();
+    scheduleWorkspaceSnapshot();
   });
 
   await onPaneAgent(({ sessionId, agent }) => {
@@ -1006,6 +1432,8 @@ export async function bootWorkspace(
       applyTabColor(leaf.tab, null);
     }
     palette.refresh();
+    missionControl.refresh();
+    scheduleWorkspaceSnapshot();
   });
 
   await onPaneCwd(({ sessionId, cwd }) => {
@@ -1018,6 +1446,8 @@ export async function bootWorkspace(
       updateTabLabel(leaf.tab);
     }
     palette.refresh();
+    missionControl.refresh();
+    scheduleWorkspaceSnapshot();
   });
 
   await onPtyExit(({ sessionId }) => {
@@ -1053,6 +1483,8 @@ export async function bootWorkspace(
       const nextLeaf = findFirstLeaf(sibling);
       if (!nextLeaf) {
         updateTabLabel(tab);
+        missionControl.refresh();
+        scheduleWorkspaceSnapshot();
         return;
       }
 
@@ -1062,6 +1494,8 @@ export async function bootWorkspace(
         tab.activeLeaf = nextLeaf;
         updateTabLabel(tab);
       }
+      missionControl.refresh();
+      scheduleWorkspaceSnapshot();
     }, 400);
   });
 
@@ -1069,40 +1503,47 @@ export async function bootWorkspace(
     runAsync(() => openNewTab(), "failed to open new tab");
   });
 
-  registerKeybindings(
-    window,
-    {
-      activateTabByIndex,
-      bumpFontSize,
-      clearActive,
-      closeActivePane: () => {
-        runAsync(() => closeActivePane(), "failed to close pane");
-      },
-      cycleTab,
-      navigate,
-      openNewTab: () => {
-        runAsync(() => openNewTab(), "failed to open new tab");
-      },
-      resetFontSize,
-      splitActive: (direction) => {
-        runAsync(() => splitActive(direction), "failed to split pane");
-      },
-      toggleAgentPalette: () => palette.toggle("agents"),
-      togglePanePalette: () => palette.toggle("all"),
-      toggleBroadcast,
-      toggleSearch: () => search.toggle(),
-      toggleHistorySearch: () => historyPalette.toggle(),
-      findNextInPane: () => search.findNext(),
-      findPreviousInPane: () => search.findPrevious(),
-      toggleHelp: () => help.toggle(),
-      toggleCommandPalette: () => commandPalette.toggle(),
-      jumpToWaitingAgent,
-      jumpToPrompt,
-      addBookmark,
-      toggleWriteLock,
+  const keybindingHandlers = {
+    activateTabByIndex,
+    bumpFontSize,
+    clearActive,
+    closeActivePane: () => {
+      runAsync(() => closeActivePane(), "failed to close pane");
     },
-    config.keybindings,
-  );
+    cycleTab,
+    navigate,
+    openNewTab: () => {
+      runAsync(() => openNewTab(), "failed to open new tab");
+    },
+    resetFontSize,
+    splitActive: (direction: SplitDirection) => {
+      runAsync(() => splitActive(direction), "failed to split pane");
+    },
+    toggleAgentPalette: () => palette.toggle("agents"),
+    togglePanePalette: () => palette.toggle("all"),
+    toggleBroadcast,
+    toggleMissionControl: () => missionControl.toggle(),
+    toggleSearch: () => search.toggle(),
+    toggleHistorySearch: () => historyPalette.toggle(),
+    findNextInPane: () => search.findNext(),
+    findPreviousInPane: () => search.findPrevious(),
+    toggleHelp: () => help.toggle(),
+    toggleCommandPalette: () => commandPalette.toggle(),
+    jumpToWaitingAgent,
+    jumpToPrompt,
+    addBookmark,
+    toggleWriteLock,
+  };
+
+  rebindKeybindings = () => {
+    unregisterKeybindings?.();
+    unregisterKeybindings = registerKeybindings(
+      window,
+      keybindingHandlers,
+      config.keybindings,
+    );
+  };
+  rebindKeybindings();
 
   window.addEventListener("resize", () => {
     if (!state.activeTab) {
@@ -1119,5 +1560,10 @@ export async function bootWorkspace(
     reportInvokeError,
   });
 
-  await openNewTab();
+  window.addEventListener("beforeunload", saveWorkspaceSnapshot);
+  window.addEventListener("mouseup", scheduleWorkspaceSnapshot);
+
+  if (!(await restoreWorkspaceSnapshot())) {
+    await openNewTab();
+  }
 }

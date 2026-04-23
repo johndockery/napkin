@@ -23,6 +23,8 @@ use notify::{RecursiveMode, Watcher};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter};
 
+use crate::editor::{spawn_detached, EditorCommand};
+
 const DEFAULT_TEMPLATE: &str = include_str!("../../docs/config.default.toml");
 
 /// Resolved path to the primary config file (TOML).
@@ -84,40 +86,19 @@ pub(crate) fn config_open() -> Result<(), String> {
 
     let path = config_ensure()?;
 
-    let editor = std::env::var("EDITOR").unwrap_or_default();
-    let bin = editor
-        .split_whitespace()
-        .next()
-        .map(|s| s.rsplit('/').next().unwrap_or(s).to_string())
-        .unwrap_or_default();
-
-    let spawn = |cmd: &mut Command| -> Result<(), String> {
-        cmd.stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| e.to_string())
-    };
-
-    match bin.as_str() {
-        "code" | "code-insiders" | "cursor" | "windsurf" => {
-            let mut c = Command::new(&bin);
-            c.arg(&path);
-            spawn(&mut c)
-        }
-        "" => {
-            // Route to the user's default app for .toml — usually an editor.
-            let mut c = Command::new("open");
-            c.arg(&path);
-            spawn(&mut c)
-        }
-        _ => {
-            let mut c = Command::new(&bin);
-            c.arg(&path);
-            spawn(&mut c)
-        }
+    if let Some(editor) = EditorCommand::from_configured(None) {
+        let mut cmd = editor.command();
+        cmd.arg(&path);
+        return spawn_detached(&mut cmd);
     }
+
+    // Route to the user's default app for .toml — usually an editor.
+    let mut cmd = Command::new("open");
+    cmd.arg(&path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    spawn_detached(&mut cmd)
 }
 
 /// Reveal the config file in Finder (macOS) or the XDG file manager.

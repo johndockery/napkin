@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::client::Client;
+use crate::editor::{spawn_detached, EditorCommand};
 
 #[derive(Serialize)]
 pub(crate) struct PtySession {
@@ -91,6 +92,24 @@ pub(crate) fn pty_kill(client: State<'_, Client>, session_id: String) -> Result<
     }
 }
 
+#[tauri::command]
+pub(crate) fn pty_pause(client: State<'_, Client>, session_id: String) -> Result<(), String> {
+    match client.request(ClientOp::PauseSession { session_id })? {
+        ServerOp::Ok => Ok(()),
+        ServerOp::Err { error } => Err(error),
+        other => Err(format!("unexpected reply: {other:?}")),
+    }
+}
+
+#[tauri::command]
+pub(crate) fn pty_resume(client: State<'_, Client>, session_id: String) -> Result<(), String> {
+    match client.request(ClientOp::ResumeSession { session_id })? {
+        ServerOp::Ok => Ok(()),
+        ServerOp::Err { error } => Err(error),
+        other => Err(format!("unexpected reply: {other:?}")),
+    }
+}
+
 #[derive(Serialize)]
 pub(crate) struct HistoryEntry {
     session_id: String,
@@ -149,23 +168,17 @@ pub(crate) fn pty_list(client: State<'_, Client>) -> Result<Vec<PtySession>, Str
     }
 }
 
-/// Open a file path (optionally with line/column) in the user's editor.
-/// Honours $EDITOR via `-g` syntax when it looks like vscode/cursor; falls
-/// back to `open` on macOS otherwise.
+/// Open a file path (optionally with line/column) in the configured editor.
+/// Honours a caller-provided editor command first, then $EDITOR, then falls
+/// back to `open` on macOS.
 #[tauri::command]
 pub(crate) fn open_in_editor(
     path: String,
     #[allow(non_snake_case)] line: Option<u32>,
     #[allow(non_snake_case)] column: Option<u32>,
+    editor: Option<String>,
 ) -> Result<(), String> {
     use std::process::Command;
-
-    let editor = std::env::var("EDITOR").unwrap_or_default();
-    let editor_bin = editor
-        .split_whitespace()
-        .next()
-        .map(|s| s.rsplit('/').next().unwrap_or(s).to_string())
-        .unwrap_or_default();
 
     // Build the target path with line:col suffix if we have one.
     let target = match (line, column) {
@@ -174,39 +187,29 @@ pub(crate) fn open_in_editor(
         _ => path.clone(),
     };
 
-    let spawn = |cmd: &mut Command| {
-        cmd.stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| e.to_string())
-    };
-
-    match editor_bin.as_str() {
-        "code" | "code-insiders" | "cursor" | "windsurf" => {
-            let mut c = Command::new(&editor_bin);
-            c.arg("-g").arg(&target);
-            spawn(&mut c)
-        }
-        "" => {
-            // No $EDITOR configured; fall back to macOS `open`, which routes
-            // to the user's default editor association.
-            let mut c = Command::new("open");
-            c.arg(&path);
-            spawn(&mut c)
-        }
-        _ => {
-            // Generic $EDITOR invocation. Some editors support +line;
-            // include it only when we have a line.
-            let mut c = Command::new(&editor_bin);
+    if let Some(editor) = EditorCommand::from_configured(editor) {
+        let mut cmd = editor.command();
+        if editor.is_vscode_like() {
+            cmd.arg("-g").arg(&target);
+        } else {
+            // Generic editor invocation. Some editors support +line; include
+            // it only when we have a line.
             if let Some(l) = line {
-                c.arg(format!("+{l}"));
+                cmd.arg(format!("+{l}"));
             }
-            c.arg(&path);
-            spawn(&mut c)
+            cmd.arg(&path);
         }
+        return spawn_detached(&mut cmd);
     }
+
+    // No configured editor; fall back to macOS `open`, which routes to the
+    // user's default editor association.
+    let mut cmd = Command::new("open");
+    cmd.arg(&path)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    spawn_detached(&mut cmd)
 }
 
 /// Re-attach the UI to an existing daemon session and resize it to the

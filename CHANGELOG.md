@@ -1,8 +1,35 @@
 # Changelog
 
+## [0.3.0] — 2026-04-23
+
+### Product
+- Added Agent Mission Control (`Cmd+Shift+O`) for scanning every pane,
+  focusing agents, pause/resume, write-locking, killing panes, launching
+  agents from task prompts, and opening the diff inbox.
+- Added workspace snapshots that restore tabs, split layout, active panes,
+  daemon session attachments, cwd, tab colors, bookmarks, and write-locks.
+- Added a diff inbox so agent-submitted diffs remain reviewable with
+  pending / accepted / rejected state.
+- Upgraded command history into a command timeline that loads recent
+  commands immediately, copies the selected command, and jumps to the live
+  pane when possible.
+- Broadcast mode now confirms the number of unlocked target panes before
+  enabling fan-out.
+
+### Fixes
+- Exposed daemon pause/resume controls to the Tauri UI.
+- Added safer editor command parsing and wired configured editor support
+  through file-link handling.
+- Added regression coverage for OSC parsing, agent classification, session
+  spawning, SQLite-backed scrollback, and command history.
+- Updated install/docs drift around TOML config, legacy JSON fallback, and
+  the public installer URL.
+
 ## [0.2.0] — 2026-04-23
 
 ### Fixes
+- Configuration now uses the documented TOML path
+  (`~/.config/napkin/config.toml`) while retaining legacy JSON fallback.
 - File drops now write directly to the targeted pane instead of flowing
   through terminal paste / broadcast input.
 - Closing a pane now fully tears down its daemon session and forgets its
@@ -65,7 +92,8 @@ First public build. Everything on the landing page is a real feature.
   `<repo>/.napkin-worktrees/` for agent isolation.
 
 ### Runtime
-- Config at `~/.config/napkin/config.json` with theme and font overrides.
+- Config at `~/.config/napkin/config.json` with theme and font overrides
+  (replaced by TOML config in 0.2.0).
 - Session scrollback capped at 2 MB in-memory per pane; spilled to
   SQLite in 64 KB chunks for post-restart replay.
 - Broken JSON in the config file logs and falls back to defaults

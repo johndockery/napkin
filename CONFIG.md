@@ -103,8 +103,8 @@ Set a value to `""` to disable the default binding.
 Recognized actions:
 
 `new_tab`, `close_pane`, `split_horizontal`, `split_vertical`, `clear_pane`,
-`broadcast`, `agent_palette`, `pane_palette`, `command_palette`, `find`,
-`history`, `find_next`, `find_previous`, `toggle_help`,
+`broadcast`, `mission_control`, `agent_palette`, `pane_palette`,
+`command_palette`, `find`, `history`, `find_next`, `find_previous`, `toggle_help`,
 `jump_to_waiting_agent`, `jump_prompt_previous`, `jump_prompt_next`,
 `add_bookmark`, `write_lock`, `font_bigger`, `font_smaller`, `font_reset`,
 `navigate_left`, `navigate_right`, `navigate_up`, `navigate_down`,
@@ -113,6 +113,7 @@ Recognized actions:
 ```toml
 [keybindings]
 command_palette = "Cmd+Shift+Space"
+mission_control = "Cmd+Shift+O"
 broadcast       = ""                 # disable the default Cmd+Shift+B
 ```
 
@@ -157,4 +158,5 @@ cost_budget_usd = 5.0
 [keybindings]
 pane_palette    = "Cmd+K"
 command_palette = "Cmd+Shift+K"
+mission_control = "Cmd+Shift+O"
 ```

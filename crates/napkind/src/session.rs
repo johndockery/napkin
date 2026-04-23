@@ -32,6 +32,18 @@ pub(crate) const SCROLLBACK_LIMIT: usize = 2 * 1024 * 1024;
 /// = more rows + more fsyncs; larger = more replay work after a crash.
 const SCROLLBACK_FLUSH_BYTES: usize = 64 * 1024;
 
+pub(crate) struct SpawnSessionRequest {
+    pub preassigned_id: Option<String>,
+    pub rows: u16,
+    pub cols: u16,
+    pub cwd: Option<String>,
+    pub shell: Option<String>,
+    pub shell_args: Vec<String>,
+    pub env: std::collections::BTreeMap<String, String>,
+    pub initial_subscriber: Sender<ServerMsg>,
+    pub storage: Arc<Storage>,
+}
+
 pub(crate) struct Session {
     pub master: Box<dyn MasterPty + Send>,
     pub writer: Box<dyn Write + Send>,
@@ -75,54 +87,35 @@ pub(crate) fn resurrect_session(
     initial_subscriber: Sender<ServerMsg>,
     storage: Arc<Storage>,
 ) -> Result<Arc<Mutex<Session>>, String> {
-    let (_, session) = spawn_session_inner(
-        Some(session_id),
-        24,
-        80,
-        Some(cwd),
-        None,
-        Vec::new(),
-        std::collections::BTreeMap::new(),
+    let (_, session) = spawn_session(SpawnSessionRequest {
+        preassigned_id: Some(session_id),
+        rows: 24,
+        cols: 80,
+        cwd: Some(cwd),
+        shell: None,
+        shell_args: Vec::new(),
+        env: std::collections::BTreeMap::new(),
         initial_subscriber,
         storage,
-    )?;
+    })?;
     Ok(session)
 }
 
 pub(crate) fn spawn_session(
-    rows: u16,
-    cols: u16,
-    cwd: Option<String>,
-    shell: Option<String>,
-    shell_args: Vec<String>,
-    env: std::collections::BTreeMap<String, String>,
-    initial_subscriber: Sender<ServerMsg>,
-    storage: Arc<Storage>,
+    request: SpawnSessionRequest,
 ) -> Result<(String, Arc<Mutex<Session>>), String> {
-    spawn_session_inner(
-        None,
+    let SpawnSessionRequest {
+        preassigned_id,
         rows,
         cols,
         cwd,
         shell,
-        shell_args,
-        env,
+        shell_args: extra_shell_args,
+        env: extra_env,
         initial_subscriber,
         storage,
-    )
-}
+    } = request;
 
-fn spawn_session_inner(
-    preassigned_id: Option<String>,
-    rows: u16,
-    cols: u16,
-    cwd: Option<String>,
-    shell: Option<String>,
-    extra_shell_args: Vec<String>,
-    extra_env: std::collections::BTreeMap<String, String>,
-    initial_subscriber: Sender<ServerMsg>,
-    storage: Arc<Storage>,
-) -> Result<(String, Arc<Mutex<Session>>), String> {
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -525,4 +518,29 @@ fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::classify_agent;
+
+    #[test]
+    fn classifies_known_agents_from_command_basename() {
+        assert_eq!(classify_agent("claude --continue"), Some("claude"));
+        assert_eq!(
+            classify_agent("/opt/homebrew/bin/codex --model gpt-5"),
+            Some("codex")
+        );
+        assert_eq!(classify_agent("cursor-agent run"), Some("cursor"));
+        assert_eq!(classify_agent("aider --yes"), Some("aider"));
+        assert_eq!(classify_agent("opencode"), Some("opencode"));
+        assert_eq!(classify_agent("gemini -p hello"), Some("gemini"));
+    }
+
+    #[test]
+    fn ignores_unknown_or_empty_command_lines() {
+        assert_eq!(classify_agent("cargo test"), None);
+        assert_eq!(classify_agent(""), None);
+        assert_eq!(classify_agent("   "), None);
+    }
 }

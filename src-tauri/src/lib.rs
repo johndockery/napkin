@@ -3,14 +3,15 @@
 mod client;
 mod commands;
 mod config;
+mod editor;
 mod events;
 
 use tauri::Manager;
 
 use crate::client::{start_client, Client};
 use crate::commands::{
-    diff_decide, open_in_editor, pty_kill, pty_list, pty_resize, pty_spawn, pty_subscribe,
-    pty_write, search_history,
+    diff_decide, open_in_editor, pty_kill, pty_list, pty_pause, pty_resize, pty_resume, pty_spawn,
+    pty_subscribe, pty_write, search_history,
 };
 use crate::config::{
     config_ensure, config_open, config_path_string, config_reset, config_reveal, load_config,
@@ -42,6 +43,8 @@ pub fn run() {
             pty_write,
             pty_resize,
             pty_kill,
+            pty_pause,
+            pty_resume,
             pty_list,
             pty_subscribe,
             load_config,

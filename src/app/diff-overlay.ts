@@ -13,7 +13,16 @@ interface DiffPromptEvent {
 }
 
 export interface DiffOverlay {
+  toggleInbox(): void;
+  pendingCount(): number;
   dispose(): Promise<void>;
+}
+
+type DiffInboxStatus = "pending" | "accepted" | "rejected";
+
+interface DiffInboxItem extends DiffPromptEvent {
+  status: DiffInboxStatus;
+  receivedAt: number;
 }
 
 export async function createDiffOverlay(doc: Document): Promise<DiffOverlay> {
@@ -63,7 +72,48 @@ export async function createDiffOverlay(doc: Document): Promise<DiffOverlay> {
   root.appendChild(backdrop);
   doc.body.appendChild(root);
 
-  let currentDiffId: string | null = null;
+  const inboxRoot = doc.createElement("div");
+  inboxRoot.className = "napkin-diff-inbox";
+  inboxRoot.hidden = true;
+  inboxRoot.setAttribute("role", "dialog");
+  inboxRoot.setAttribute("aria-modal", "true");
+  inboxRoot.setAttribute("aria-label", "Diff inbox");
+
+  const inboxBackdrop = doc.createElement("div");
+  inboxBackdrop.className = "napkin-diff-backdrop";
+  inboxBackdrop.addEventListener("mousedown", (event) => {
+    if (event.target === inboxBackdrop) closeInbox();
+  });
+
+  const inboxFrame = doc.createElement("div");
+  inboxFrame.className = "napkin-diff-inbox-frame";
+
+  const inboxHeader = doc.createElement("div");
+  inboxHeader.className = "napkin-diff-header";
+
+  const inboxTitle = doc.createElement("span");
+  inboxTitle.className = "napkin-diff-title";
+  inboxTitle.textContent = "Diff inbox";
+
+  const inboxMeta = doc.createElement("span");
+  inboxMeta.className = "napkin-diff-meta";
+
+  inboxHeader.append(inboxTitle, inboxMeta);
+
+  const inboxList = doc.createElement("div");
+  inboxList.className = "napkin-diff-inbox-list";
+
+  const inboxEmpty = doc.createElement("div");
+  inboxEmpty.className = "napkin-diff-inbox-empty";
+  inboxEmpty.textContent = "No agent diffs yet.";
+
+  inboxFrame.append(inboxHeader, inboxList, inboxEmpty);
+  inboxBackdrop.appendChild(inboxFrame);
+  inboxRoot.appendChild(inboxBackdrop);
+  doc.body.appendChild(inboxRoot);
+
+  let currentItem: DiffInboxItem | null = null;
+  const items: DiffInboxItem[] = [];
 
   const renderDiff = (diff: string) => {
     body.replaceChildren();
@@ -85,24 +135,28 @@ export async function createDiffOverlay(doc: Document): Promise<DiffOverlay> {
     }
   };
 
-  const show = (event: DiffPromptEvent) => {
-    currentDiffId = event.diffId;
-    title.textContent = event.title ?? "Agent diff";
-    const lines = event.diff.split("\n").length;
+  const showItem = (item: DiffInboxItem) => {
+    currentItem = item;
+    closeInbox();
+    title.textContent = item.title ?? "Agent diff";
+    const lines = item.diff.split("\n").length;
     meta.textContent = `${lines} line${lines === 1 ? "" : "s"}`;
-    renderDiff(event.diff);
+    renderDiff(item.diff);
     root.hidden = false;
     doc.addEventListener("keydown", onKeyDown, true);
     queueMicrotask(() => acceptBtn.focus());
   };
 
   const decide = async (accepted: boolean) => {
-    if (!currentDiffId) {
+    if (!currentItem) {
       hide();
       return;
     }
-    const diffId = currentDiffId;
+    const item = currentItem;
+    const diffId = item.diffId;
+    item.status = accepted ? "accepted" : "rejected";
     hide();
+    renderInbox();
     try {
       await invoke("diff_decide", { diffId, accepted });
     } catch (error) {
@@ -115,8 +169,70 @@ export async function createDiffOverlay(doc: Document): Promise<DiffOverlay> {
   const hide = () => {
     if (root.hidden) return;
     root.hidden = true;
-    currentDiffId = null;
+    currentItem = null;
     doc.removeEventListener("keydown", onKeyDown, true);
+  };
+
+  const renderInbox = () => {
+    const pending = items.filter((item) => item.status === "pending").length;
+    inboxMeta.textContent =
+      `${items.length} total / ${pending} pending`;
+
+    inboxList.replaceChildren();
+    inboxList.hidden = items.length === 0;
+    inboxEmpty.hidden = items.length > 0;
+
+    for (const item of items) {
+      const row = doc.createElement("div");
+      row.className = "napkin-diff-inbox-row";
+      row.dataset.status = item.status;
+
+      const main = doc.createElement("button");
+      main.type = "button";
+      main.className = "napkin-diff-inbox-main";
+      main.addEventListener("click", () => showItem(item));
+
+      const rowTitle = doc.createElement("span");
+      rowTitle.className = "napkin-diff-inbox-title";
+      rowTitle.textContent = item.title ?? "Agent diff";
+
+      const lines = item.diff.split("\n").length;
+      const rowMeta = doc.createElement("span");
+      rowMeta.className = "napkin-diff-inbox-row-meta";
+      rowMeta.textContent = `${lines} line${lines === 1 ? "" : "s"} / ${new Date(item.receivedAt).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      })}`;
+
+      main.append(rowTitle, rowMeta);
+
+      const status = doc.createElement("span");
+      status.className = "napkin-diff-inbox-status";
+      status.textContent = item.status;
+
+      const view = doc.createElement("button");
+      view.type = "button";
+      view.className = "napkin-diff-button";
+      view.textContent = item.status === "pending" ? "Review" : "View";
+      view.addEventListener("click", () => showItem(item));
+
+      row.append(main, status, view);
+      inboxList.appendChild(row);
+    }
+  };
+
+  const openInbox = () => {
+    renderInbox();
+    if (!root.hidden) hide();
+    if (!inboxRoot.hidden) return;
+    inboxRoot.hidden = false;
+    doc.addEventListener("keydown", onInboxKeyDown, true);
+  };
+
+  const closeInbox = () => {
+    if (inboxRoot.hidden) return;
+    inboxRoot.hidden = true;
+    doc.removeEventListener("keydown", onInboxKeyDown, true);
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
@@ -131,6 +247,13 @@ export async function createDiffOverlay(doc: Document): Promise<DiffOverlay> {
     }
   };
 
+  const onInboxKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeInbox();
+    }
+  };
+
   acceptBtn.addEventListener("click", () => void decide(true));
   rejectBtn.addEventListener("click", () => void decide(false));
 
@@ -140,17 +263,37 @@ export async function createDiffOverlay(doc: Document): Promise<DiffOverlay> {
     readonly diff: string;
     readonly title: string | null;
   }>("pane-diff-prompt", ({ payload }) => {
-    show({
+    const item: DiffInboxItem = {
       sessionId: payload.session_id,
       diffId: payload.diff_id,
       diff: payload.diff,
       title: payload.title,
-    });
+      status: "pending",
+      receivedAt: Date.now(),
+    };
+    const existingIndex = items.findIndex((candidate) => candidate.diffId === item.diffId);
+    if (existingIndex >= 0) {
+      items.splice(existingIndex, 1);
+    }
+    items.unshift(item);
+    if (items.length > 100) {
+      items.splice(100);
+    }
+    renderInbox();
+    showItem(item);
   });
 
   return {
+    toggleInbox() {
+      if (inboxRoot.hidden) openInbox();
+      else closeInbox();
+    },
+    pendingCount() {
+      return items.filter((item) => item.status === "pending").length;
+    },
     async dispose() {
       hide();
+      closeInbox();
       unlisten();
     },
   };

@@ -1,9 +1,8 @@
-//! Global command-history palette (Cmd+Shift+F).
+//! Global command timeline palette (Cmd+Shift+F).
 //!
 //! Queries napkind's SQLite history table for commands matching the query
-//! and renders them newest-first. Enter on a selection currently closes the
-//! palette (jump-to-source needs per-session scrollback positions; that's
-//! a later step).
+//! and renders them newest-first. Selection can hand the chosen command
+//! back to the workspace so live sessions can be focused.
 
 import { searchHistory, type HistoryEntry } from "./ipc.ts";
 
@@ -12,15 +11,22 @@ export interface HistoryPalette {
   close(): void;
 }
 
+export interface HistoryPaletteOptions {
+  readonly onSelect?: (entry: HistoryEntry) => void;
+}
+
 const DEFAULT_LIMIT = 200;
 
-export function createHistoryPalette(doc: Document): HistoryPalette {
+export function createHistoryPalette(
+  doc: Document,
+  options: HistoryPaletteOptions = {},
+): HistoryPalette {
   const root = doc.createElement("div");
   root.className = "napkin-palette";
   root.hidden = true;
   root.setAttribute("role", "dialog");
   root.setAttribute("aria-modal", "true");
-  root.setAttribute("aria-label", "Search command history");
+  root.setAttribute("aria-label", "Command timeline");
 
   const backdrop = doc.createElement("div");
   backdrop.className = "napkin-palette-backdrop";
@@ -33,12 +39,12 @@ export function createHistoryPalette(doc: Document): HistoryPalette {
 
   const header = doc.createElement("div");
   header.className = "napkin-palette-header";
-  header.textContent = "Search history";
+  header.textContent = "Command timeline";
 
   const input = doc.createElement("input");
   input.type = "text";
   input.className = "napkin-palette-input";
-  input.placeholder = "Search every command napkin has recorded…";
+  input.placeholder = "Search every command napkin has recorded...";
   input.spellcheck = false;
   input.autocomplete = "off";
 
@@ -47,12 +53,12 @@ export function createHistoryPalette(doc: Document): HistoryPalette {
 
   const empty = doc.createElement("div");
   empty.className = "napkin-palette-empty";
-  empty.textContent = "No matches yet.";
+  empty.textContent = "No commands recorded yet.";
   empty.hidden = true;
 
   const hint = doc.createElement("div");
   hint.className = "napkin-palette-hint";
-  hint.textContent = "Searches every session ever recorded · Esc to close";
+  hint.textContent = "Enter to jump/copy · Searches every recorded session · Esc to close";
 
   frame.append(header, input, list, empty, hint);
   backdrop.appendChild(frame);
@@ -140,23 +146,19 @@ export function createHistoryPalette(doc: Document): HistoryPalette {
   };
 
   const activateSelected = () => {
-    // Jumping to a historical command's exact scrollback position is a
-    // Phase B follow-up. For now, selecting one just copies the command
-    // to the clipboard so the user can re-run it.
     const entry = results[selectedIndex];
     if (!entry) return;
-    void navigator.clipboard.writeText(entry.cmd).catch(() => {});
+    if (options.onSelect) {
+      options.onSelect(entry);
+    } else {
+      void navigator.clipboard.writeText(entry.cmd).catch(() => {});
+    }
     close();
   };
 
   const runQuery = async (query: string): Promise<void> => {
     activeQueryId += 1;
     const myId = activeQueryId;
-    if (query.trim().length === 0) {
-      results = [];
-      render();
-      return;
-    }
     try {
       const fresh = await searchHistory(query, DEFAULT_LIMIT);
       if (myId !== activeQueryId) return;
@@ -219,6 +221,7 @@ export function createHistoryPalette(doc: Document): HistoryPalette {
     render();
     root.hidden = false;
     doc.addEventListener("keydown", onKeyDown, true);
+    void runQuery("");
     queueMicrotask(() => input.focus());
   };
 

@@ -40,10 +40,11 @@ const SECTIONS: readonly Section[] = [
     shortcuts: [
       { keys: "⌘P", description: "Pane palette" },
       { keys: "⌘⇧P", description: "Command palette" },
+      { keys: "⌘⇧O", description: "Agent Mission Control" },
       { keys: "⌘J", description: "Jump to next waiting agent" },
       { keys: "⌘⇧A", description: "Agent palette" },
       { keys: "⌘F", description: "Search within pane" },
-      { keys: "⌘⇧F", description: "Search command history (cross-session)" },
+      { keys: "⌘⇧F", description: "Command timeline (cross-session)" },
       { keys: "⌘G / ⌘⇧G", description: "Next / previous match" },
       { keys: "⌘↑ / ⌘↓", description: "Jump between prompts in the pane" },
       { keys: "⌘⇧M", description: "Bookmark current scrollback position" },

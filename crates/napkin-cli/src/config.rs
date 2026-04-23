@@ -81,18 +81,13 @@ fn edit_cmd() -> ExitCode {
         }
     };
 
-    let editor = std::env::var("EDITOR").unwrap_or_default();
-    let bin = editor
-        .split_whitespace()
-        .next()
-        .map(|s| s.rsplit('/').next().unwrap_or(s).to_string())
-        .unwrap_or_default();
-
     use std::process::Command;
-    let status = if bin.is_empty() {
+    let mut editor_parts = split_command(&std::env::var("EDITOR").unwrap_or_default());
+    let status = if editor_parts.is_empty() {
         Command::new("open").arg(&path).status()
     } else {
-        Command::new(&bin).arg(&path).status()
+        let program = editor_parts.remove(0);
+        Command::new(program).args(editor_parts).arg(&path).status()
     };
 
     match status {
@@ -103,6 +98,47 @@ fn edit_cmd() -> ExitCode {
             ExitCode::from(1)
         }
     }
+}
+
+fn split_command(raw: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+
+    for ch in raw.chars() {
+        if escaped {
+            current.push(ch);
+            escaped = false;
+            continue;
+        }
+
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+
+        match quote {
+            Some(q) if ch == q => quote = None,
+            Some(_) => current.push(ch),
+            None if ch == '"' || ch == '\'' => quote = Some(ch),
+            None if ch.is_whitespace() => {
+                if !current.is_empty() {
+                    parts.push(std::mem::take(&mut current));
+                }
+            }
+            None => current.push(ch),
+        }
+    }
+
+    if escaped {
+        current.push('\\');
+    }
+    if !current.is_empty() {
+        parts.push(current);
+    }
+
+    parts
 }
 
 fn validate_cmd() -> ExitCode {
@@ -127,5 +163,31 @@ fn validate_cmd() -> ExitCode {
             eprintln!("napkin config: {}: {e}", path.display());
             ExitCode::from(1)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_command;
+
+    #[test]
+    fn splits_editor_command_with_args() {
+        assert_eq!(
+            split_command("code --reuse-window"),
+            vec!["code".to_string(), "--reuse-window".to_string()],
+        );
+    }
+
+    #[test]
+    fn preserves_quoted_paths() {
+        assert_eq!(
+            split_command(
+                "\"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code\" --wait",
+            ),
+            vec![
+                "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code".to_string(),
+                "--wait".to_string(),
+            ],
+        );
     }
 }

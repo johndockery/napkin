@@ -195,6 +195,7 @@ function applyCssVariables(win: WindowConfig, term: TerminalConfig): void {
   const root = document.documentElement;
   root.style.setProperty("--window-opacity", String(win.opacity));
   root.style.setProperty("--pane-padding", `${win.padding}px`);
+  root.style.setProperty("--chrome-backdrop-filter", win.blur ? "blur(12px)" : "none");
   root.style.setProperty(
     "--terminal-bg",
     typeof term.theme.background === "string" ? term.theme.background : "transparent",

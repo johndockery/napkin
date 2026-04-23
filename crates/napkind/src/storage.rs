@@ -12,7 +12,7 @@
 //! whose methods are all silent no-ops, so persistence failure degrades
 //! cleanly to the in-memory path we had before.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use rusqlite::{params, Connection};
@@ -44,8 +44,14 @@ impl Storage {
     pub fn open() -> Result<Self, String> {
         let dir = data_dir()?;
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let path = dir.join("napkind.sqlite3");
-        let conn = Connection::open(&path).map_err(|e| e.to_string())?;
+        Self::open_at(&dir.join("napkind.sqlite3"))
+    }
+
+    fn open_at(path: &Path) -> Result<Self, String> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let conn = Connection::open(path).map_err(|e| e.to_string())?;
 
         conn.execute_batch(
             r#"
@@ -288,4 +294,73 @@ fn now_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{now_ms, Storage, StoredCommand};
+
+    fn temp_db_path(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "napkin-storage-test-{name}-{}-{}",
+            std::process::id(),
+            now_ms(),
+        ));
+        dir.join("napkind.sqlite3")
+    }
+
+    #[test]
+    fn stores_sessions_scrollback_and_command_history() {
+        let path = temp_db_path("roundtrip");
+        let storage = Storage::open_at(&path).expect("open test storage");
+
+        storage.record_session("s1", "/tmp/napkin");
+        let sessions = storage.load_recent_sessions(60_000);
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].id, "s1");
+        assert_eq!(sessions[0].cwd, "/tmp/napkin");
+
+        storage.append_scrollback("s1", 0, b"hello ");
+        storage.append_scrollback("s1", 6, b"world");
+        assert_eq!(storage.load_scrollback("s1", 1024), b"hello world".to_vec(),);
+
+        storage.record_command(
+            &StoredCommand {
+                session_id: "s1".to_string(),
+                cwd: "/tmp/napkin".to_string(),
+                cmd: "cargo test --workspace".to_string(),
+                started_at_ms: 10,
+                ended_at_ms: Some(20),
+                exit_code: Some(0),
+            },
+            1,
+        );
+
+        let matches = storage.search_commands("cargo", 10);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].cmd, "cargo test --workspace");
+
+        storage.forget_session("s1");
+        assert!(storage.load_recent_sessions(60_000).is_empty());
+        assert!(storage.load_scrollback("s1", 1024).is_empty());
+        assert_eq!(storage.search_commands("cargo", 10).len(), 1);
+
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+
+    #[test]
+    fn truncates_loaded_scrollback_to_requested_limit() {
+        let path = temp_db_path("scrollback-limit");
+        let storage = Storage::open_at(&path).expect("open test storage");
+
+        storage.append_scrollback("s1", 0, b"abcdef");
+
+        assert_eq!(storage.load_scrollback("s1", 3), b"def".to_vec());
+
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
 }

@@ -24,6 +24,7 @@ const PATH_PATTERN =
 export function registerFilePathLinks(
   terminal: Terminal,
   reportError: (context: string, error: unknown) => void,
+  getEditor: () => string | null = () => null,
 ): void {
   terminal.registerLinkProvider({
     provideLinks(bufferLineNumber, callback) {
@@ -52,7 +53,7 @@ export function registerFilePathLinks(
           range,
           text: match[0],
           activate(_event: MouseEvent, _text: string) {
-            void openInEditor(path, lineNumber, columnNumber).catch((error) => {
+            void openInEditor(path, lineNumber, columnNumber, getEditor()).catch((error) => {
               reportError(`open_in_editor(${path})`, error);
             });
           },

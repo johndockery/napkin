@@ -208,7 +208,7 @@ pub(crate) fn attach(session_id: String) -> ExitCode {
                         stdin_exit.store(true, Ordering::Relaxed);
                         break;
                     }
-                    if let Err(_) = send_msg(
+                    let write_result = send_msg(
                         &stdin_writer,
                         &ClientMsg {
                             id: None,
@@ -217,7 +217,8 @@ pub(crate) fn attach(session_id: String) -> ExitCode {
                                 data: buf[..n].to_vec(),
                             },
                         },
-                    ) {
+                    );
+                    if write_result.is_err() {
                         break;
                     }
                 }
@@ -266,8 +267,7 @@ pub(crate) fn attach(session_id: String) -> ExitCode {
 }
 
 fn send_msg(writer: &Arc<Mutex<UnixStream>>, msg: &ClientMsg) -> std::io::Result<()> {
-    let line = serde_json::to_string(msg)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let line = serde_json::to_string(msg).map_err(std::io::Error::other)?;
     let mut w = writer.lock().unwrap();
     writeln!(w, "{line}")
 }
