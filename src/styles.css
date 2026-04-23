@@ -801,6 +801,11 @@ html, body {
   box-shadow: 0 0 0 0.5px rgba(254, 251, 244, 0.2);
 }
 
+.leaf.file-drop-target {
+  border-color: #e5c07b;
+  box-shadow: 0 0 0 1px rgba(229, 192, 123, 0.35);
+}
+
 /* Broadcast mode: ring every broadcasting pane and badge the tab */
 .leaf.broadcasting {
   border-color: #61afef;
@@ -827,6 +832,10 @@ html, body {
 .leaf.broadcasting.active {
   border-color: #61afef;
   box-shadow: 0 0 0 1px rgba(97, 175, 239, 0.5);
+}
+.leaf.file-drop-target.broadcasting {
+  border-color: #e5c07b;
+  box-shadow: 0 0 0 1px rgba(229, 192, 123, 0.45);
 }
 .tab.broadcasting {
   color: #61afef;

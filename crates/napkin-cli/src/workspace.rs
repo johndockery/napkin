@@ -76,16 +76,17 @@ fn new(mut args: impl Iterator<Item = String>) -> ExitCode {
     let sanitized = sanitize(&branch);
     let path = worktrees.join(&sanitized);
     if path.exists() {
-        eprintln!(
-            "napkin workspace: {} already exists",
-            path.display()
-        );
+        eprintln!("napkin workspace: {} already exists", path.display());
         return ExitCode::from(1);
     }
 
     let mut cmd = Command::new("git");
     cmd.current_dir(&repo_root);
-    cmd.arg("worktree").arg("add").arg("-b").arg(&branch).arg(&path);
+    cmd.arg("worktree")
+        .arg("add")
+        .arg("-b")
+        .arg(&branch)
+        .arg(&path);
     if let Some(base) = base {
         cmd.arg(&base);
     }
@@ -177,6 +178,12 @@ fn git_toplevel(from: &Path) -> Option<PathBuf> {
 fn sanitize(input: &str) -> String {
     input
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect()
 }

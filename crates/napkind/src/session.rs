@@ -50,6 +50,9 @@ pub(crate) struct Session {
     pub persisted_offset: usize,
     /// Pending bytes not yet flushed to SQLite.
     pub unflushed_scrollback: Vec<u8>,
+    /// Closing a pane should forget any resurrectable state, even if the PTY
+    /// reader drains a bit more output while the child is being torn down.
+    pub discard_persistence: bool,
     /// PID of the shell spawned on this PTY. Used as the SIGSTOP / SIGCONT
     /// target when the user pauses the session. None on older sessions or
     /// if portable-pty couldn't report a pid.
@@ -97,7 +100,15 @@ pub(crate) fn spawn_session(
     storage: Arc<Storage>,
 ) -> Result<(String, Arc<Mutex<Session>>), String> {
     spawn_session_inner(
-        None, rows, cols, cwd, shell, shell_args, env, initial_subscriber, storage,
+        None,
+        rows,
+        cols,
+        cwd,
+        shell,
+        shell_args,
+        env,
+        initial_subscriber,
+        storage,
     )
 }
 
@@ -169,6 +180,9 @@ fn spawn_session_inner(
     }
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
+    cmd.env_remove("NO_COLOR");
+    cmd.env("TERM_PROGRAM", "napkin");
+    cmd.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
     cmd.env("NAPKIN", "1");
     cmd.env("NAPKIN_SESSION_ID", &session_id);
     cmd.env("NAPKIN_SOCKET", socket.to_string_lossy().to_string());
@@ -233,6 +247,7 @@ fn spawn_session_inner(
         pending_command: None,
         persisted_offset: 0,
         unflushed_scrollback: Vec::new(),
+        discard_persistence: false,
         shell_pid,
     }));
 
@@ -251,15 +266,19 @@ fn spawn_session_inner(
                     let events = scanner.feed(&data);
                     let flush = {
                         let mut s = lock_or_recover(&session_for_reader);
-                        s.append_scrollback(&data);
-                        s.unflushed_scrollback.extend_from_slice(&data);
-                        if s.unflushed_scrollback.len() >= SCROLLBACK_FLUSH_BYTES {
-                            let offset = s.persisted_offset;
-                            let chunk = std::mem::take(&mut s.unflushed_scrollback);
-                            s.persisted_offset += chunk.len();
-                            Some((offset, chunk))
-                        } else {
+                        if s.discard_persistence {
                             None
+                        } else {
+                            s.append_scrollback(&data);
+                            s.unflushed_scrollback.extend_from_slice(&data);
+                            if s.unflushed_scrollback.len() >= SCROLLBACK_FLUSH_BYTES {
+                                let offset = s.persisted_offset;
+                                let chunk = std::mem::take(&mut s.unflushed_scrollback);
+                                s.persisted_offset += chunk.len();
+                                Some((offset, chunk))
+                            } else {
+                                None
+                            }
                         }
                     };
                     if let Some((offset, chunk)) = flush {
@@ -284,19 +303,24 @@ fn spawn_session_inner(
             }
         }
         // Flush any trailing bytes on shutdown so we don't lose the tail.
-        let trailing = {
+        let (trailing, discard_persistence) = {
             let mut s = lock_or_recover(&session_for_reader);
-            if s.unflushed_scrollback.is_empty() {
-                None
+            if s.discard_persistence {
+                (None, true)
+            } else if s.unflushed_scrollback.is_empty() {
+                (None, false)
             } else {
                 let offset = s.persisted_offset;
                 let chunk = std::mem::take(&mut s.unflushed_scrollback);
                 s.persisted_offset += chunk.len();
-                Some((offset, chunk))
+                (Some((offset, chunk)), false)
             }
         };
         if let Some((offset, chunk)) = trailing {
             storage_for_reader.append_scrollback(&emit_id, offset, &chunk);
+        }
+        if discard_persistence {
+            storage_for_reader.forget_session(&emit_id);
         }
         broadcast(
             &session_for_reader,

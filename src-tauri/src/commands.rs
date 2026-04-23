@@ -134,9 +134,7 @@ pub(crate) fn search_history(
     limit: Option<u32>,
 ) -> Result<Vec<HistoryEntry>, String> {
     match client.request(ClientOp::SearchHistory { query, limit })? {
-        ServerOp::HistoryResults { matches } => {
-            Ok(matches.into_iter().map(Into::into).collect())
-        }
+        ServerOp::HistoryResults { matches } => Ok(matches.into_iter().map(Into::into).collect()),
         ServerOp::Err { error } => Err(error),
         other => Err(format!("unexpected reply: {other:?}")),
     }

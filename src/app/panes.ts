@@ -84,6 +84,7 @@ export function createLeafPane(
     element,
     terminalHostElement,
     terminal,
+    outputDecoder: new TextDecoder(),
     fitAddon,
     searchAddon,
     cleanup: [

@@ -196,12 +196,20 @@ enum DiffSource {
     Stdin,
 }
 
-enum Signal { Pause, Resume }
+enum Signal {
+    Pause,
+    Resume,
+}
 
 fn signal_cmd(mut args: impl Iterator<Item = String>, sig: Signal) -> ExitCode {
     let Some(session_id) = args.next() else {
-        eprintln!("usage: napkin {} <session_id>",
-            match sig { Signal::Pause => "pause", Signal::Resume => "resume" });
+        eprintln!(
+            "usage: napkin {} <session_id>",
+            match sig {
+                Signal::Pause => "pause",
+                Signal::Resume => "resume",
+            }
+        );
         return ExitCode::from(2);
     };
 
@@ -312,9 +320,7 @@ fn hook_cmd(mut args: impl Iterator<Item = String>) -> ExitCode {
     let state = match args.next() {
         Some(s) => s,
         None => {
-            eprintln!(
-                "usage: napkin hook <state> [--agent <name>] [--tokens <n>] [--cost <usd>]"
-            );
+            eprintln!("usage: napkin hook <state> [--agent <name>] [--tokens <n>] [--cost <usd>]");
             return ExitCode::from(2);
         }
     };

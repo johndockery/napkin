@@ -135,7 +135,11 @@ pub(crate) fn config_reveal() -> Result<(), String> {
     #[cfg(not(target_os = "macos"))]
     let mut cmd = {
         let mut c = Command::new("xdg-open");
-        c.arg(std::path::Path::new(&path).parent().unwrap_or_else(|| std::path::Path::new("/")));
+        c.arg(
+            std::path::Path::new(&path)
+                .parent()
+                .unwrap_or_else(|| std::path::Path::new("/")),
+        );
         c
     };
 
@@ -171,7 +175,10 @@ pub(crate) fn config_reset() -> Result<String, String> {
 /// settled change.
 pub(crate) fn spawn_config_watcher(app: AppHandle) {
     let path = config_path();
-    let dir = path.parent().map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
+    let dir = path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
 
     thread::spawn(move || {
         let (tx, rx) = channel();
@@ -273,9 +280,9 @@ fn toml_to_json(v: toml::Value) -> Value {
     match v {
         toml::Value::String(s) => Value::String(s),
         toml::Value::Integer(i) => Value::Number(i.into()),
-        toml::Value::Float(f) => {
-            serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null)
-        }
+        toml::Value::Float(f) => serde_json::Number::from_f64(f)
+            .map(Value::Number)
+            .unwrap_or(Value::Null),
         toml::Value::Boolean(b) => Value::Bool(b),
         toml::Value::Datetime(d) => Value::String(d.to_string()),
         toml::Value::Array(a) => Value::Array(a.into_iter().map(toml_to_json).collect()),

@@ -26,6 +26,7 @@ export interface LeafPane {
   readonly element: HTMLDivElement;
   readonly terminalHostElement: HTMLDivElement;
   readonly terminal: Terminal;
+  readonly outputDecoder: TextDecoder;
   readonly fitAddon: FitAddon;
   readonly searchAddon: SearchAddon;
   readonly cleanup: CleanupFn[];

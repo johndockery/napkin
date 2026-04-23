@@ -90,11 +90,15 @@ impl Storage {
         )
         .map_err(|e| e.to_string())?;
 
-        Ok(Self { conn: Mutex::new(Some(conn)) })
+        Ok(Self {
+            conn: Mutex::new(Some(conn)),
+        })
     }
 
     pub fn disconnected() -> Self {
-        Self { conn: Mutex::new(None) }
+        Self {
+            conn: Mutex::new(None),
+        }
     }
 
     fn with_conn<F: FnOnce(&Connection)>(&self, f: F) {
@@ -155,12 +159,32 @@ impl Storage {
         });
     }
 
+    /// Forget a session's resurrectable state while retaining command
+    /// history, so closing a pane does not resurrect it on the next boot.
+    pub fn forget_session(&self, session_id: &str) {
+        self.with_conn(|c| {
+            let _ = c.execute(
+                "DELETE FROM scrollback_chunks WHERE session_id = ?1",
+                params![session_id],
+            );
+            let _ = c.execute(
+                "DELETE FROM tab_metadata WHERE session_id = ?1",
+                params![session_id],
+            );
+            let _ = c.execute("DELETE FROM sessions WHERE id = ?1", params![session_id]);
+        });
+    }
+
     /// Load recent sessions from disk for startup rehydration. Sessions
     /// whose last_seen is older than `max_age_ms` are skipped so the user
     /// isn't greeted with a wall of stale tabs from last month.
     pub fn load_recent_sessions(&self, max_age_ms: i64) -> Vec<StoredSession> {
-        let Ok(guard) = self.conn.lock() else { return Vec::new() };
-        let Some(conn) = guard.as_ref() else { return Vec::new() };
+        let Ok(guard) = self.conn.lock() else {
+            return Vec::new();
+        };
+        let Some(conn) = guard.as_ref() else {
+            return Vec::new();
+        };
         let cutoff = now_ms() - max_age_ms;
         let mut stmt = match conn.prepare(
             "SELECT id, cwd, created_at, last_seen FROM sessions
@@ -187,8 +211,12 @@ impl Storage {
     /// whatever survived in SQLite so reattach after a daemon restart still
     /// shows history.
     pub fn load_scrollback(&self, session_id: &str, max_bytes: usize) -> Vec<u8> {
-        let Ok(guard) = self.conn.lock() else { return Vec::new() };
-        let Some(conn) = guard.as_ref() else { return Vec::new() };
+        let Ok(guard) = self.conn.lock() else {
+            return Vec::new();
+        };
+        let Some(conn) = guard.as_ref() else {
+            return Vec::new();
+        };
         let mut stmt = match conn.prepare(
             "SELECT data FROM scrollback_chunks
              WHERE session_id = ?1 ORDER BY offset ASC",
@@ -211,8 +239,12 @@ impl Storage {
     }
 
     pub fn search_commands(&self, query: &str, limit: u32) -> Vec<StoredCommand> {
-        let Ok(guard) = self.conn.lock() else { return Vec::new() };
-        let Some(conn) = guard.as_ref() else { return Vec::new() };
+        let Ok(guard) = self.conn.lock() else {
+            return Vec::new();
+        };
+        let Some(conn) = guard.as_ref() else {
+            return Vec::new();
+        };
         let like = format!("%{query}%");
         let mut stmt = match conn.prepare(
             "SELECT session_id, cwd, cmd, started_at, ended_at, exit_code

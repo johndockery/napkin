@@ -5,7 +5,6 @@ import {
   configOpen,
   configReset,
   configReveal,
-  listPtySessions,
   loadConfig,
   onConfigChanged,
   onPaneAgent,
@@ -19,6 +18,7 @@ import { createNotificationGate } from "./notifications.ts";
 import { createCommandPalette, type CommandEntry } from "./commands.ts";
 import { applyTabColor, openTabColorMenu } from "./tab-colors.ts";
 import { createDiffOverlay } from "./diff-overlay.ts";
+import { registerFileDropPaste } from "./file-drops.ts";
 import { createHelpOverlay } from "./help.ts";
 import { createHistoryPalette } from "./history-palette.ts";
 import { createPanePalette, type PalettePaneEntry } from "./palette.ts";
@@ -64,8 +64,6 @@ import type {
   Tab,
 } from "./types.ts";
 import { getTabRoot } from "./types.ts";
-
-const outputDecoder = new TextDecoder();
 
 /**
  * Agent hooks send free-form state strings; map them to the UI's state
@@ -866,7 +864,7 @@ export async function bootWorkspace(
     if (!leaf) {
       return;
     }
-    leaf.terminal.write(outputDecoder.decode(new Uint8Array(data)));
+    leaf.terminal.write(leaf.outputDecoder.decode(new Uint8Array(data), { stream: true }));
   });
 
   await onPaneMark(({ sessionId, mark, exit }) => {
@@ -1113,23 +1111,13 @@ export async function bootWorkspace(
     forEachLeaf(getTabRoot(state.activeTab), fitLeafPane);
   });
 
-  let existing: Awaited<ReturnType<typeof listPtySessions>> = [];
-  try {
-    existing = await listPtySessions();
-  } catch (error) {
-    reporter.report("failed to list sessions", error, { level: "warn" });
-  }
+  await registerFileDropPaste({
+    appWindow: getCurrentWindow(),
+    listLeaves,
+    getActiveLeaf: () => state.activeTab?.activeLeaf ?? null,
+    focusLeaf,
+    reportInvokeError,
+  });
 
-  if (existing.length === 0) {
-    await openNewTab();
-  } else {
-    // Reattach each existing daemon session as its own tab. First tab ends up
-    // focused; ordering follows whatever the daemon reported.
-    for (const summary of existing) {
-      await openNewTab({
-        attachTo: summary.sessionId,
-        initialCwd: summary.cwd,
-      });
-    }
-  }
+  await openNewTab();
 }

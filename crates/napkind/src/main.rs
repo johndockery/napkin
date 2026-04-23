@@ -12,6 +12,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
+use std::time::Duration;
 
 use napkin_proto::{
     socket_path, ClientMsg, ClientOp, HistoryMatch, ServerMsg, ServerOp, SessionInfo,
@@ -237,8 +238,7 @@ fn dispatch(
         }
 
         ClientOp::Kill { session_id } => {
-            lock_or_recover(sessions).remove(&session_id);
-            reply(ServerOp::Ok);
+            reply(kill_session(sessions, hibernated, storage, &session_id));
         }
 
         ClientOp::List => {
@@ -302,10 +302,7 @@ fn dispatch(
             if let Some((waiter_tx, waiter_id)) = waiter {
                 let _ = waiter_tx.send(ServerMsg {
                     id: waiter_id,
-                    op: ServerOp::DiffResolved {
-                        diff_id,
-                        accepted,
-                    },
+                    op: ServerOp::DiffResolved { diff_id, accepted },
                 });
             }
             reply(ServerOp::Ok);
@@ -435,7 +432,9 @@ fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 /// Send a signal to the shell process of a session.
 fn signal_session(sessions: &SessionMap, session_id: &str, signal: libc::c_int) -> ServerOp {
     let Some(session) = lock_or_recover(sessions).get(session_id).cloned() else {
-        return ServerOp::Err { error: "no such session".into() };
+        return ServerOp::Err {
+            error: "no such session".into(),
+        };
     };
     let pid = {
         let s = lock_or_recover(&session);
@@ -456,4 +455,148 @@ fn signal_session(sessions: &SessionMap, session_id: &str, signal: libc::c_int) 
             error: format!("kill({pid}, {signal}) failed: {errno}"),
         }
     }
+}
+
+fn kill_session(
+    sessions: &SessionMap,
+    hibernated: &Arc<Mutex<HashMap<String, session::HibernatedSession>>>,
+    storage: &Arc<Storage>,
+    session_id: &str,
+) -> ServerOp {
+    if let Some(session) = lock_or_recover(sessions).get(session_id).cloned() {
+        let kill_result = {
+            let mut s = lock_or_recover(&session);
+            s.discard_persistence = true;
+            let result = terminate_session_processes(
+                s.shell_pid.map(|pid| pid as libc::pid_t),
+                s.master.process_group_leader(),
+            );
+            if result.is_err() {
+                s.discard_persistence = false;
+            }
+            result
+        };
+        if let Err(error) = kill_result {
+            return ServerOp::Err {
+                error: format!("kill session failed: {error}"),
+            };
+        }
+
+        lock_or_recover(sessions).remove(session_id);
+        lock_or_recover(hibernated).remove(session_id);
+        storage.forget_session(session_id);
+        return ServerOp::Ok;
+    }
+
+    if lock_or_recover(hibernated).remove(session_id).is_some() {
+        storage.forget_session(session_id);
+        return ServerOp::Ok;
+    }
+
+    ServerOp::Err {
+        error: "no such session".into(),
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SignalTarget {
+    Process(libc::pid_t),
+    ProcessGroup(libc::pid_t),
+}
+
+impl SignalTarget {
+    fn kill_arg(self) -> libc::pid_t {
+        match self {
+            Self::Process(pid) => pid,
+            Self::ProcessGroup(pgid) => -pgid,
+        }
+    }
+}
+
+fn terminate_session_processes(
+    shell_pid: Option<libc::pid_t>,
+    foreground_group: Option<libc::pid_t>,
+) -> std::io::Result<()> {
+    let mut targets = Vec::new();
+    if let Some(pgid) = foreground_group.filter(|pid| *pid > 0) {
+        push_signal_target(&mut targets, SignalTarget::ProcessGroup(pgid));
+    }
+    if let Some(pid) = shell_pid.filter(|pid| *pid > 0) {
+        push_signal_target(&mut targets, SignalTarget::ProcessGroup(pid));
+        push_signal_target(&mut targets, SignalTarget::Process(pid));
+    }
+    if targets.is_empty() {
+        return Ok(());
+    }
+
+    signal_targets(&targets, libc::SIGHUP)?;
+    signal_targets(&targets, libc::SIGCONT)?;
+    if wait_for_targets_exit(&targets, 6, Duration::from_millis(50)) {
+        return Ok(());
+    }
+
+    signal_targets(&targets, libc::SIGTERM)?;
+    signal_targets(&targets, libc::SIGCONT)?;
+    if wait_for_targets_exit(&targets, 10, Duration::from_millis(50)) {
+        return Ok(());
+    }
+
+    signal_targets(&targets, libc::SIGKILL)?;
+    if wait_for_targets_exit(&targets, 10, Duration::from_millis(50)) {
+        return Ok(());
+    }
+
+    Err(std::io::Error::other("timed out waiting for session to exit"))
+}
+
+fn push_signal_target(targets: &mut Vec<SignalTarget>, target: SignalTarget) {
+    if !targets.contains(&target) {
+        targets.push(target);
+    }
+}
+
+fn signal_targets(targets: &[SignalTarget], signal: libc::c_int) -> std::io::Result<()> {
+    let mut first_error: Option<std::io::Error> = None;
+    for target in targets {
+        // Safety: kill(2) is always safe to call.
+        let rc = unsafe { libc::kill(target.kill_arg(), signal) };
+        if rc == 0 {
+            continue;
+        }
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() == Some(libc::ESRCH) {
+            continue;
+        }
+        if first_error.is_none() {
+            first_error = Some(error);
+        }
+    }
+    match first_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+
+fn wait_for_targets_exit(targets: &[SignalTarget], attempts: usize, delay: Duration) -> bool {
+    for attempt in 0..attempts {
+        if !targets.iter().any(signal_target_alive) {
+            return true;
+        }
+        if attempt + 1 < attempts {
+            thread::sleep(delay);
+        }
+    }
+    !targets.iter().any(signal_target_alive)
+}
+
+fn signal_target_alive(target: &SignalTarget) -> bool {
+    // Safety: kill(2) is always safe to call.
+    let rc = unsafe { libc::kill(target.kill_arg(), 0) };
+    if rc == 0 {
+        return true;
+    }
+    matches!(
+        std::io::Error::last_os_error().raw_os_error(),
+        Some(libc::EPERM)
+    )
 }

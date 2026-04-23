@@ -1,6 +1,21 @@
 # Changelog
 
-## [0.1.0] — unreleased
+## [0.2.0] — 2026-04-23
+
+### Fixes
+- File drops now write directly to the targeted pane instead of flowing
+  through terminal paste / broadcast input.
+- Closing a pane now fully tears down its daemon session and forgets its
+  resurrectable scrollback state.
+- Shells launched by `napkind` scrub `NO_COLOR` and identify
+  `TERM_PROGRAM=napkin`, which restores normal colour behaviour in agent
+  CLIs.
+- PTY output is decoded as streaming UTF-8 per pane so split multibyte
+  sequences stop corrupting full-screen agent UIs.
+- App launch opens a fresh tab instead of auto-reattaching every daemon
+  session into the window.
+
+## [0.1.0] — 2026-04-22
 
 First public build. Everything on the landing page is a real feature.
 

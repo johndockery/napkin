@@ -265,10 +265,7 @@ pub(crate) fn attach(session_id: String) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn send_msg(
-    writer: &Arc<Mutex<UnixStream>>,
-    msg: &ClientMsg,
-) -> std::io::Result<()> {
+fn send_msg(writer: &Arc<Mutex<UnixStream>>, msg: &ClientMsg) -> std::io::Result<()> {
     let line = serde_json::to_string(msg)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
     let mut w = writer.lock().unwrap();
