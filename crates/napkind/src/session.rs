@@ -195,6 +195,18 @@ pub(crate) fn spawn_session(
         if let Ok(dir) = ensure_zsh_shim() {
             cmd.env("ZDOTDIR", dir);
         }
+        // Run zsh as a login shell so /etc/zprofile (and ~/.zprofile) execute.
+        // On macOS /etc/zprofile is what runs `path_helper`, which restores
+        // /opt/homebrew/bin, /usr/local/bin, and friends — without -l, panes
+        // launched from the .app inherit launchd's stripped PATH and tools
+        // installed by Homebrew look "missing". Skip if the user already
+        // supplied -l/--login themselves.
+        let user_set_login = extra_shell_args
+            .iter()
+            .any(|a| a == "-l" || a == "--login" || a.starts_with("-l"));
+        if !user_set_login {
+            cmd.arg("-l");
+        }
     }
 
     // User-supplied shell args appended after any shim flags. Typically
