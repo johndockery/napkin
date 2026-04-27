@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.1] — 2026-04-27
+
+### Fixes
+- Tauri setup no longer blocks the main thread on the napkind unix-socket
+  connect. The connect (and any spawn-and-wait for napkind) runs on a
+  worker thread; commands made before the daemon comes up wait on a
+  condvar instead. Cold launches no longer beach-ball.
+- Zsh sessions now launch as login shells (`-l`) by default so
+  `/etc/zprofile` (and `path_helper`) seed `/opt/homebrew/bin`,
+  `/usr/local/bin`, and friends. Without this, panes spawned from the
+  GUI inherited launchd's stripped PATH and Homebrew tools looked
+  missing. Skipped if the user already passes `-l` / `--login` via
+  `[shell] args`.
+- Corrected the `[shell] program` default-value comment in the annotated
+  config template (`/bin/bash` → `/bin/zsh`).
+
 ## [0.3.0] — 2026-04-23
 
 ### Product
