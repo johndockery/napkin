@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Sender};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::Duration;
 
 use napkin_proto::{socket_path, ClientMsg, ClientOp, ServerMsg, ServerOp};
@@ -18,8 +18,22 @@ use crate::events::dispatch_event;
 type PendingReplies = Arc<Mutex<HashMap<u64, Sender<ServerOp>>>>;
 type SubscribedSessions = Arc<Mutex<HashSet<String>>>;
 
-pub(crate) struct Client {
-    tx: Sender<ClientMsg>,
+/// Upper bound a request will wait on the connection coming up before
+/// returning a clean error. Generous — cold start may need to spawn napkind
+/// and let it open its socket.
+const CONNECT_WAIT: Duration = Duration::from_secs(15);
+/// How long to wait for napkind to reply once a request has been sent.
+const REPLY_TIMEOUT: Duration = Duration::from_secs(10);
+
+enum ConnState {
+    Connecting,
+    Connected(Sender<ClientMsg>),
+    Failed(String),
+}
+
+struct ClientShared {
+    state: Mutex<ConnState>,
+    ready: Condvar,
     pending: PendingReplies,
     next_id: AtomicU64,
     /// Sessions this Tauri process has already told napkind to subscribe to.
@@ -28,48 +42,102 @@ pub(crate) struct Client {
     subscribed: SubscribedSessions,
 }
 
-impl Client {
-    pub(crate) fn request(&self, op: ClientOp) -> Result<ServerOp, String> {
-        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        let (reply_tx, reply_rx) = channel::<ServerOp>();
-        lock_or_recover(&self.pending).insert(id, reply_tx);
-        self.tx
-            .send(ClientMsg { id: Some(id), op })
-            .map_err(|error| error.to_string())?;
+pub(crate) struct Client {
+    shared: Arc<ClientShared>,
+}
 
-        match reply_rx.recv_timeout(Duration::from_secs(10)) {
-            Ok(response) => Ok(response),
-            Err(error) => {
-                lock_or_recover(&self.pending).remove(&id);
-                Err(format!("napkind reply timeout: {error}"))
-            }
-        }
+impl Client {
+    /// Returns immediately. The unix-socket connection to napkind, including
+    /// any spawn-and-wait for the daemon, runs on a worker thread; the Tauri
+    /// setup hook (and therefore the main thread) never blocks on it. Calls
+    /// to `request()` made before the worker finishes wait on a condvar.
+    pub(crate) fn start(app: AppHandle) -> Self {
+        let shared = Arc::new(ClientShared {
+            state: Mutex::new(ConnState::Connecting),
+            ready: Condvar::new(),
+            pending: Arc::new(Mutex::new(HashMap::new())),
+            next_id: AtomicU64::new(1),
+            subscribed: Arc::new(Mutex::new(HashSet::new())),
+        });
+
+        let worker = shared.clone();
+        std::thread::spawn(move || {
+            connect_and_wire(app, worker);
+        });
+
+        Self { shared }
     }
 
-    pub(crate) fn disconnected() -> Self {
-        let (dead_tx, _dead_rx) = channel::<ClientMsg>();
-        Self {
-            tx: dead_tx,
-            pending: Arc::new(Mutex::new(HashMap::new())),
-            next_id: AtomicU64::new(0),
-            subscribed: Arc::new(Mutex::new(HashSet::new())),
+    pub(crate) fn request(&self, op: ClientOp) -> Result<ServerOp, String> {
+        let tx = self.wait_for_sender()?;
+
+        let id = self.shared.next_id.fetch_add(1, Ordering::SeqCst);
+        let (reply_tx, reply_rx) = channel::<ServerOp>();
+        lock_or_recover(&self.shared.pending).insert(id, reply_tx);
+        tx.send(ClientMsg { id: Some(id), op })
+            .map_err(|error| error.to_string())?;
+
+        match reply_rx.recv_timeout(REPLY_TIMEOUT) {
+            Ok(response) => Ok(response),
+            Err(error) => {
+                lock_or_recover(&self.shared.pending).remove(&id);
+                Err(format!("napkind reply timeout: {error}"))
+            }
         }
     }
 
     /// Atomically record that this session has been subscribed and report
     /// whether the caller is the first subscriber for that id.
     pub(crate) fn mark_subscribed(&self, session_id: &str) -> bool {
-        lock_or_recover(&self.subscribed).insert(session_id.to_string())
+        lock_or_recover(&self.shared.subscribed).insert(session_id.to_string())
+    }
+
+    fn wait_for_sender(&self) -> Result<Sender<ClientMsg>, String> {
+        let mut guard = lock_or_recover(&self.shared.state);
+        loop {
+            match &*guard {
+                ConnState::Connected(tx) => return Ok(tx.clone()),
+                ConnState::Failed(err) => return Err(err.clone()),
+                ConnState::Connecting => {
+                    let (next, timeout) = self
+                        .shared
+                        .ready
+                        .wait_timeout(guard, CONNECT_WAIT)
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    if timeout.timed_out() {
+                        return Err("napkind: still connecting".to_string());
+                    }
+                    guard = next;
+                }
+            }
+        }
     }
 }
 
-pub(crate) fn start_client(app: AppHandle) -> Result<Client, String> {
-    let stream = ensure_napkind_running(&socket_path())?;
-    let read_stream = stream.try_clone().map_err(|error| error.to_string())?;
+fn connect_and_wire(app: AppHandle, shared: Arc<ClientShared>) {
+    let stream = match ensure_napkind_running(&socket_path()) {
+        Ok(stream) => stream,
+        Err(error) => {
+            eprintln!("napkin: failed to connect to napkind: {error}");
+            *lock_or_recover(&shared.state) = ConnState::Failed(error);
+            shared.ready.notify_all();
+            return;
+        }
+    };
+
+    let read_stream = match stream.try_clone() {
+        Ok(s) => s,
+        Err(error) => {
+            let msg = error.to_string();
+            eprintln!("napkin: failed to clone napkind stream: {msg}");
+            *lock_or_recover(&shared.state) = ConnState::Failed(msg);
+            shared.ready.notify_all();
+            return;
+        }
+    };
     let mut write_stream = stream;
 
     let (tx, rx) = channel::<ClientMsg>();
-    let pending: PendingReplies = Arc::new(Mutex::new(HashMap::new()));
 
     std::thread::spawn(move || {
         while let Ok(msg) = rx.recv() {
@@ -82,7 +150,7 @@ pub(crate) fn start_client(app: AppHandle) -> Result<Client, String> {
         }
     });
 
-    let pending_for_reader = pending.clone();
+    let pending_for_reader = shared.pending.clone();
     let app_for_reader = app.clone();
     std::thread::spawn(move || {
         let reader = BufReader::new(read_stream);
@@ -105,12 +173,8 @@ pub(crate) fn start_client(app: AppHandle) -> Result<Client, String> {
         }
     });
 
-    Ok(Client {
-        tx,
-        pending,
-        next_id: AtomicU64::new(1),
-        subscribed: Arc::new(Mutex::new(HashSet::new())),
-    })
+    *lock_or_recover(&shared.state) = ConnState::Connected(tx);
+    shared.ready.notify_all();
 }
 
 fn find_napkind() -> Option<PathBuf> {

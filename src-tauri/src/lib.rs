@@ -8,7 +8,7 @@ mod events;
 
 use tauri::Manager;
 
-use crate::client::{start_client, Client};
+use crate::client::Client;
 use crate::commands::{
     diff_decide, open_in_editor, pty_kill, pty_list, pty_pause, pty_resize, pty_resume, pty_spawn,
     pty_subscribe, pty_write, search_history,
@@ -24,17 +24,10 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let handle = app.handle().clone();
-            match start_client(handle.clone()) {
-                Ok(client) => {
-                    app.manage(client);
-                }
-                Err(error) => {
-                    eprintln!("napkin: failed to connect to napkind: {error}");
-                    // Keep the invoke surface available so the frontend gets a
-                    // clean error instead of a missing state panic.
-                    app.manage(Client::disconnected());
-                }
-            }
+            // Non-blocking: the napkind connect (and any spawn-and-wait) runs
+            // on a worker thread inside `Client::start`. Setup returns
+            // immediately so the window paints without beach-balling.
+            app.manage(Client::start(handle.clone()));
             spawn_config_watcher(handle);
             Ok(())
         })
