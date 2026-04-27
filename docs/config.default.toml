@@ -9,7 +9,7 @@
 
 # ─── shell ──────────────────────────────────────────────────────────
 [shell]
-# program = "/opt/homebrew/bin/fish"   # defaults to $SHELL, else /bin/bash
+# program = "/opt/homebrew/bin/fish"   # defaults to $SHELL, else /bin/zsh
 # args    = ["-l"]
 # env     = { FOO = "bar" }
 # cwd     = "~/code"                   # starting directory for new panes
