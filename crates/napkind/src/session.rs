@@ -42,6 +42,7 @@ pub(crate) struct SpawnSessionRequest {
     pub env: std::collections::BTreeMap<String, String>,
     pub initial_subscriber: Sender<ServerMsg>,
     pub storage: Arc<Storage>,
+    pub exit_tx: Sender<String>,
 }
 
 pub(crate) struct Session {
@@ -86,6 +87,7 @@ pub(crate) fn resurrect_session(
     cwd: String,
     initial_subscriber: Sender<ServerMsg>,
     storage: Arc<Storage>,
+    exit_tx: Sender<String>,
 ) -> Result<Arc<Mutex<Session>>, String> {
     let (_, session) = spawn_session(SpawnSessionRequest {
         preassigned_id: Some(session_id),
@@ -97,6 +99,7 @@ pub(crate) fn resurrect_session(
         env: std::collections::BTreeMap::new(),
         initial_subscriber,
         storage,
+        exit_tx,
     })?;
     Ok(session)
 }
@@ -114,6 +117,7 @@ pub(crate) fn spawn_session(
         env: extra_env,
         initial_subscriber,
         storage,
+        exit_tx,
     } = request;
 
     let pty_system = native_pty_system();
@@ -308,25 +312,25 @@ pub(crate) fn spawn_session(
             }
         }
         // Flush any trailing bytes on shutdown so we don't lose the tail.
-        let (trailing, discard_persistence) = {
+        let trailing = {
             let mut s = lock_or_recover(&session_for_reader);
             if s.discard_persistence {
-                (None, true)
+                None
             } else if s.unflushed_scrollback.is_empty() {
-                (None, false)
+                None
             } else {
                 let offset = s.persisted_offset;
                 let chunk = std::mem::take(&mut s.unflushed_scrollback);
                 s.persisted_offset += chunk.len();
-                (Some((offset, chunk)), false)
+                Some((offset, chunk))
             }
         };
         if let Some((offset, chunk)) = trailing {
             storage_for_reader.append_scrollback(&emit_id, offset, &chunk);
         }
-        if discard_persistence {
-            storage_for_reader.forget_session(&emit_id);
-        }
+        // The PTY is gone, so this session should not be resurrected as an
+        // attachable live workspace. Command history is retained.
+        storage_for_reader.forget_session(&emit_id);
         broadcast(
             &session_for_reader,
             ServerMsg {
@@ -336,6 +340,7 @@ pub(crate) fn spawn_session(
                 },
             },
         );
+        let _ = exit_tx.send(emit_id);
     });
 
     // Reaper

@@ -912,16 +912,24 @@ export async function bootWorkspace(
 
     const nextLeaf = createLeafForTab(tab);
     const split = createSplitPane(direction, activeLeaf, nextLeaf);
+    const initialCwd = activeLeaf.cwd !== "~" ? activeLeaf.cwd : undefined;
+    if (initialCwd) {
+      nextLeaf.cwd = initialCwd;
+    }
 
     replacePaneInTree(tab, activeLeaf, split, elements.container);
     syncBroadcastState(tab);
 
+    const spawnOverrides = currentSpawnOverrides();
     await mountLeafPane(nextLeaf, {
       leavesBySessionId: state.leavesBySessionId,
       getBroadcastTargets: () => listBroadcastTargets(tab),
       reportInvokeError,
       getEditor: () => config.integrations.editor,
-      spawnOverrides: currentSpawnOverrides(),
+      spawnOverrides: {
+        ...spawnOverrides,
+        cwd: spawnOverrides.cwd ?? initialCwd,
+      },
     });
     focusLeaf(nextLeaf);
     scheduleWorkspaceSnapshot();
@@ -1470,6 +1478,7 @@ export async function bootWorkspace(
       disposeLeafPane(leaf, {
         leavesBySessionId: state.leavesBySessionId,
         reportInvokeError,
+        killPty: false,
       });
 
       if (!parent) {

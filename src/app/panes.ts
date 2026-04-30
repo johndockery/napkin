@@ -229,7 +229,9 @@ export async function mountLeafPane(
 
 export function disposeLeafPane(
   leaf: LeafPane,
-  options: Pick<LeafIoOptions, "leavesBySessionId" | "reportInvokeError">,
+  options: Pick<LeafIoOptions, "leavesBySessionId" | "reportInvokeError"> & {
+    readonly killPty?: boolean;
+  },
 ): void {
   if (leaf.mountState === "disposed") {
     return;
@@ -252,9 +254,11 @@ export function disposeLeafPane(
 
   if (sessionId) {
     options.leavesBySessionId.delete(sessionId);
-    void killPty(sessionId).catch((error) => {
-      options.reportInvokeError(`pty_kill(${sessionId})`, error);
-    });
+    if (options.killPty !== false) {
+      void killPty(sessionId).catch((error) => {
+        options.reportInvokeError(`pty_kill(${sessionId})`, error);
+      });
+    }
   }
 
   leaf.terminal.dispose();

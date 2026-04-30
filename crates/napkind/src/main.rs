@@ -49,6 +49,7 @@ fn main() {
     let hibernated: Arc<Mutex<HashMap<String, session::HibernatedSession>>> =
         Arc::new(Mutex::new(HashMap::new()));
     let diff_waiters: DiffWaiters = Arc::new(Mutex::new(HashMap::new()));
+    let (session_exit_tx, session_exit_rx) = std::sync::mpsc::channel::<String>();
     let storage = Arc::new(match Storage::open() {
         Ok(s) => s,
         Err(e) => {
@@ -78,6 +79,17 @@ fn main() {
         }
     }
 
+    {
+        let sessions = sessions.clone();
+        let hibernated = hibernated.clone();
+        thread::spawn(move || {
+            while let Ok(session_id) = session_exit_rx.recv() {
+                lock_or_recover(&sessions).remove(&session_id);
+                lock_or_recover(&hibernated).remove(&session_id);
+            }
+        });
+    }
+
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
@@ -85,8 +97,16 @@ fn main() {
                 let hibernated = hibernated.clone();
                 let storage = storage.clone();
                 let diff_waiters = diff_waiters.clone();
+                let session_exit_tx = session_exit_tx.clone();
                 thread::spawn(move || {
-                    handle_client(stream, sessions, hibernated, storage, diff_waiters)
+                    handle_client(
+                        stream,
+                        sessions,
+                        hibernated,
+                        storage,
+                        diff_waiters,
+                        session_exit_tx,
+                    )
                 });
             }
             Err(e) => {
@@ -102,6 +122,7 @@ fn handle_client(
     hibernated: Arc<Mutex<HashMap<String, session::HibernatedSession>>>,
     storage: Arc<Storage>,
     diff_waiters: DiffWaiters,
+    session_exit_tx: std::sync::mpsc::Sender<String>,
 ) {
     let (tx, rx) = std::sync::mpsc::channel::<ServerMsg>();
     let read_stream = match stream.try_clone() {
@@ -131,7 +152,15 @@ fn handle_client(
         match line {
             Ok(line) if line.is_empty() => continue,
             Ok(line) => match serde_json::from_str::<ClientMsg>(&line) {
-                Ok(msg) => dispatch(msg, &sessions, &hibernated, &tx, &storage, &diff_waiters),
+                Ok(msg) => dispatch(
+                    msg,
+                    &sessions,
+                    &hibernated,
+                    &tx,
+                    &storage,
+                    &diff_waiters,
+                    &session_exit_tx,
+                ),
                 Err(e) => {
                     let _ = tx.send(ServerMsg {
                         id: None,
@@ -156,6 +185,7 @@ fn dispatch(
     tx: &std::sync::mpsc::Sender<ServerMsg>,
     storage: &Arc<Storage>,
     diff_waiters: &DiffWaiters,
+    session_exit_tx: &std::sync::mpsc::Sender<String>,
 ) {
     let id = msg.id;
     let reply = |op: ServerOp| {
@@ -182,6 +212,7 @@ fn dispatch(
             env,
             initial_subscriber: tx.clone(),
             storage: storage.clone(),
+            exit_tx: session_exit_tx.clone(),
         }) {
             Ok((sid, session)) => {
                 {
@@ -381,6 +412,7 @@ fn dispatch(
                         cwd,
                         tx.clone(),
                         storage.clone(),
+                        session_exit_tx.clone(),
                     ) {
                         Ok(s) => {
                             lock_or_recover(sessions).insert(session_id.clone(), s.clone());
