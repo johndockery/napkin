@@ -6,15 +6,12 @@
 # Actions release workflow can update version + sha256 on each tag).
 
 cask "napkin" do
-  version "0.1.0"
+  version "0.3.1"
   sha256 :no_check
 
-  on_arm do
-    url "https://github.com/johndockery/napkin/releases/download/v#{version}/napkin_#{version}_aarch64-apple-darwin.dmg"
-  end
-  on_intel do
-    url "https://github.com/johndockery/napkin/releases/download/v#{version}/napkin_#{version}_x86_64-apple-darwin.dmg"
-  end
+  arch arm: "aarch64", intel: "x64"
+
+  url "https://github.com/johndockery/napkin/releases/download/v#{version}/napkin_#{version}_#{arch}.dmg"
 
   name "napkin"
   desc "Terminal with first-class workspaces, structured scrollback, and agent-awareness"
@@ -22,8 +19,20 @@ cask "napkin" do
 
   app "napkin.app"
 
-  binary "#{appdir}/napkin.app/Contents/MacOS/napkin"
-  binary "#{appdir}/napkin.app/Contents/MacOS/napkind"
+  on_arm do
+    binary "#{appdir}/napkin.app/Contents/MacOS/napkin-aarch64-apple-darwin", target: "napkin"
+    binary "#{appdir}/napkin.app/Contents/MacOS/napkind-aarch64-apple-darwin", target: "napkind"
+  end
+
+  on_intel do
+    binary "#{appdir}/napkin.app/Contents/MacOS/napkin-x86_64-apple-darwin", target: "napkin"
+    binary "#{appdir}/napkin.app/Contents/MacOS/napkind-x86_64-apple-darwin", target: "napkind"
+  end
+
+  livecheck do
+    url :url
+    strategy :github_latest
+  end
 
   zap trash: [
     "~/Library/Application Support/dev.napkin.app",

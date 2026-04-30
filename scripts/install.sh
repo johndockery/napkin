@@ -92,8 +92,15 @@ main() {
     # quarantine xattr so macOS Gatekeeper lets the app open on first
     # launch instead of showing "cannot be verified".
     xattr -dr com.apple.quarantine "$INSTALL_APP/napkin.app" 2>/dev/null || true
-    ln -sf "$INSTALL_APP/napkin.app/Contents/MacOS/napkin" "$INSTALL_BIN/napkin"
-    ln -sf "$INSTALL_APP/napkin.app/Contents/MacOS/napkind" "$INSTALL_BIN/napkind"
+    macos_dir="$INSTALL_APP/napkin.app/Contents/MacOS"
+    cli_src="$(find "$macos_dir" -maxdepth 1 -type f -name 'napkin-*apple-darwin' -print -quit)"
+    daemon_src="$(find "$macos_dir" -maxdepth 1 -type f -name 'napkind-*apple-darwin' -print -quit)"
+    [ -n "$cli_src" ] || cli_src="$macos_dir/napkin"
+    [ -n "$daemon_src" ] || daemon_src="$macos_dir/napkind"
+    [ -x "$cli_src" ] || fatal "could not locate bundled napkin CLI in $macos_dir"
+    [ -x "$daemon_src" ] || fatal "could not locate bundled napkind in $macos_dir"
+    ln -sf "$cli_src" "$INSTALL_BIN/napkin"
+    ln -sf "$daemon_src" "$INSTALL_BIN/napkind"
     hdiutil detach -quiet "$(dirname "$app_src")" || true
     printf 'napkin install: installed %s to %s\n' "$tag" "$INSTALL_APP/napkin.app"
     printf '  CLI symlinked into %s\n' "$INSTALL_BIN"

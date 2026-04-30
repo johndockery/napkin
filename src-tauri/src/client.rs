@@ -180,13 +180,49 @@ fn connect_and_wire(app: AppHandle, shared: Arc<ClientShared>) {
 fn find_napkind() -> Option<PathBuf> {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
-            let candidate = parent.join("napkind");
-            if candidate.exists() {
-                return Some(candidate);
+            for name in napkind_binary_names() {
+                let candidate = parent.join(name);
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+            if let Ok(entries) = std::fs::read_dir(parent) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                        continue;
+                    };
+                    if name.starts_with("napkind-") && path.is_file() {
+                        return Some(path);
+                    }
+                }
             }
         }
     }
     None
+}
+
+fn napkind_binary_names() -> &'static [&'static str] {
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    {
+        &["napkind", "napkind-aarch64-apple-darwin"]
+    }
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    {
+        &["napkind", "napkind-x86_64-apple-darwin"]
+    }
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        &["napkind", "napkind-x86_64-unknown-linux-gnu"]
+    }
+    #[cfg(not(any(
+        all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "macos", target_arch = "x86_64"),
+        all(target_os = "linux", target_arch = "x86_64"),
+    )))]
+    {
+        &["napkind"]
+    }
 }
 
 fn ensure_napkind_running(socket: &std::path::Path) -> Result<UnixStream, String> {
